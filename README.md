@@ -172,7 +172,7 @@ O sistema implementa 58 casos de uso organizados em 12 pacotes funcionais:
 
 **Diagrama de Casos de Uso:**
 
-![Diagrama de Casos de Uso](./image/use-case/Diagrama%20de%20Casos%20de%20Uso.png)
+![Diagrama de Casos de Uso](./image/use-case/Diagrama%20de%20Casos%20de%20Uso.svg)
 
 ## 2.3 Diagrama de Sequência do Sistema
 
@@ -191,11 +191,11 @@ O sistema possui 6 diagramas de sequência cobrindo 22 casos de uso distribuído
 
 **Diagramas:**
 
-![Autenticação](./image/sequence-auth/Sequ%C3%AAncia%20-%20Autentica%C3%A7%C3%A3o.png)
-![Livros Públicos](./image/sequence-books-public/Sequ%C3%AAncia%20-%20Consulta%20P%C3%BAblica%20de%20Livros.png)
-![Funcionalidades de Usuário](./image/sequence-user-features/Sequ%C3%AAncia%20-%20Funcionalidades%20de%20Usu%C3%A1rio%20Autenticado.png)
-![Administração de Capítulos](./image/sequence-admin-chapters/Sequ%C3%AAncia%20-%20Administra%C3%A7%C3%A3o%20de%20Cap%C3%ADtulos%20e%20P%C3%A1ginas.png)
-![Administração de Metadados](./image/sequence-admin-metadata/Sequ%C3%AAncia%20-%20Administra%C3%A7%C3%A3o%20de%20Metadados.png)
+![Autenticação](./image/sequence-auth/Sequ%C3%AAncia%20-%20Autentica%C3%A7%C3%A3o.svg)
+![Livros Públicos](./image/sequence-books-public/Sequ%C3%AAncia%20-%20Consulta%20P%C3%BAblica%20de%20Livros.svg)
+![Funcionalidades de Usuário](./image/sequence-user-features/Sequ%C3%AAncia%20-%20Funcionalidades%20de%20Usu%C3%A1rio%20Autenticado.svg)
+![Administração de Capítulos](./image/sequence-admin-chapters/Sequ%C3%AAncia%20-%20Administra%C3%A7%C3%A3o%20de%20Cap%C3%ADtulos%20e%20P%C3%A1ginas.svg)
+![Administração de Metadados](./image/sequence-admin-metadata/Sequ%C3%AAncia%20-%20Administra%C3%A7%C3%A3o%20de%20Metadados.svg)
 
 ### 2.3.1 Contratos de Operação
 
@@ -255,25 +255,25 @@ A arquitetura do sistema é documentada através do **C4 Model**, fornecendo vis
 
 Mostra o sistema Gatuno no contexto externo, seus usuários e sistemas externos.
 
-![C4 Context](./image/c4-context/C4%20Context%20Diagram.png)
+![C4 Context](./image/c4-context/C4%20Context%20Diagram.svg)
 
 ### Level 2: Container Diagram
 
 Detalha a arquitetura de alto nível com aplicações executáveis e armazenamento de dados: Frontend (Angular 18+ SSR), Backend API (NestJS), MySQL 8.0 (Master-Slave), Redis 8.0, Selenium Grid, Prometheus/Grafana/AlertManager.
 
-![C4 Container](./image/c4-container/C4%20Container%20Diagram.png)
+![C4 Container](./image/c4-container/C4%20Container%20Diagram.svg)
 
 ### Level 3: Component Diagram
 
 Detalha os componentes internos da API Backend: Módulos de Domínio (Books, Chapters, Users, Collections), Módulos Transversais (Auth, Cache, Storage, Scraping), Camadas (Controllers, Services, Repositories, DTOs).
 
-![C4 Component](./image/c4-component/C4%20Component%20Diagram.png)
+![C4 Component](./image/c4-component/C4%20Component%20Diagram.svg)
 
 ### Level 4: Deployment Diagram
 
 Descreve a infraestrutura física de implantação com Docker Compose.
 
-![C4 Deployment](./image/c4-deployment/C4%20Deployment%20Diagram.png)
+![C4 Deployment](./image/c4-deployment/C4%20Deployment%20Diagram.svg)
 
 ## 3.2 Diagrama de Componentes e Implantação
 
@@ -283,19 +283,19 @@ Além dos diagramas C4, o sistema possui diagramas UML tradicionais para compone
 
 Representa os componentes do sistema e suas dependências, organizados por camada arquitetural.
 
-![Componentes](./image/component-diagram/Diagrama%20de%20Componentes.png)
+![Componentes](./image/component-diagram/Diagrama%20de%20Componentes.svg)
 
 ### Diagrama de Implantação - Desenvolvimento
 
 Infraestrutura local com 10 containers Docker: Frontend Angular, Backend NestJS, MySQL Master + 2 Slaves, Redis, Selenium Hub + Chrome Node, Prometheus, Grafana, AlertManager.
 
-![Implantação - Dev](./image/deployment-dev/Diagrama%20de%20Implanta%C3%A7%C3%A3o%20-%20Desenvolvimento.png)
+![Implantação - Dev](./image/deployment-dev/Diagrama%20de%20Implanta%C3%A7%C3%A3o%20-%20Desenvolvimento.svg)
 
 ### Diagrama de Implantação - Produção
 
 Infraestrutura de produção com 12 containers incluindo Traefik como reverse proxy com SSL/TLS.
 
-![Implantação - Prod](./image/deployment-prod/Diagrama%20de%20Implanta%C3%A7%C3%A3o%20-%20Produ%C3%A7%C3%A3o.png)
+![Implantação - Prod](./image/deployment-prod/Diagrama%20de%20Implanta%C3%A7%C3%A3o%20-%20Produ%C3%A7%C3%A3o.svg)
 
 ## 3.3 Diagrama de Classes
 
@@ -326,7 +326,7 @@ O diagrama de classes apresenta a estrutura estática do sistema, organizado em 
 -   Herança e interfaces
 -   Tipos de dados e visibilidade
 
-![Diagrama de Classes](./image/class/Diagrama%20de%20Classes.png)
+![Diagrama de Classes](./image/class/Diagrama%20de%20Classes.svg)
 
 ## 3.4 Diagramas de Sequência
 
@@ -341,11 +341,11 @@ Diagramas de sequência detalhados mostram a interação entre objetos (Controll
 5. **Administração de Capítulos** - UC-33, UC-34, UC-35, UC-37, UC-47, UC-56
 6. **Administração de Metadados** - UC-50, UC-51, UC-52, UC-55, UC-58
 
-![Sequência - Autenticação](./image/sequence-auth/Sequ%C3%AAncia%20-%20Autentica%C3%A7%C3%A3o.png)
-![Sequência - Livros Públicos](./image/sequence-books-public/Sequ%C3%AAncia%20-%20Consulta%20P%C3%BAblica%20de%20Livros.png)
-![Sequência - Usuário](./image/sequence-user-features/Sequ%C3%AAncia%20-%20Funcionalidades%20de%20Usu%C3%A1rio%20Autenticado.png)
-![Sequência - Admin Capítulos](./image/sequence-admin-chapters/Sequ%C3%AAncia%20-%20Administra%C3%A7%C3%A3o%20de%20Cap%C3%ADtulos%20e%20P%C3%A1ginas.png)
-![Sequência - Admin Metadados](./image/sequence-admin-metadata/Sequ%C3%AAncia%20-%20Administra%C3%A7%C3%A3o%20de%20Metadados.png)
+![Sequência - Autenticação](./image/sequence-auth/Sequ%C3%AAncia%20-%20Autentica%C3%A7%C3%A3o.svg)
+![Sequência - Livros Públicos](./image/sequence-books-public/Sequ%C3%AAncia%20-%20Consulta%20P%C3%BAblica%20de%20Livros.svg)
+![Sequência - Usuário](./image/sequence-user-features/Sequ%C3%AAncia%20-%20Funcionalidades%20de%20Usu%C3%A1rio%20Autenticado.svg)
+![Sequência - Admin Capítulos](./image/sequence-admin-chapters/Sequ%C3%AAncia%20-%20Administra%C3%A7%C3%A3o%20de%20Cap%C3%ADtulos%20e%20P%C3%A1ginas.svg)
+![Sequência - Admin Metadados](./image/sequence-admin-metadata/Sequ%C3%AAncia%20-%20Administra%C3%A7%C3%A3o%20de%20Metadados.svg)
 
 ## 3.5 Diagramas de Comunicação
 
@@ -366,11 +366,11 @@ Diagramas de comunicação (também conhecidos como diagramas de colaboração) 
 -   Parâmetros e valores de retorno
 -   Decisões e condições
 
-![Comunicação - Autenticação](./image/communication-auth/Diagrama%20de%20Comunica%C3%A7%C3%A3o%20-%20Autentica%C3%A7%C3%A3o.png)
-![Comunicação - Livros](./image/communication-books/Diagrama%20de%20Comunica%C3%A7%C3%A3o%20-%20Consulta%20de%20Livros.png)
-![Comunicação - Coleções](./image/communication-collections/Diagrama%20de%20Comunica%C3%A7%C3%A3o%20-%20Cole%C3%A7%C3%B5es%20de%20Usu%C3%A1rio.png)
-![Comunicação - Admin](./image/communication-admin/Diagrama%20de%20Comunica%C3%A7%C3%A3o%20-%20Administra%C3%A7%C3%A3o%20de%20Livros.png)
-![Comunicação - Scraping](./image/communication-scraping/Diagrama%20de%20Comunica%C3%A7%C3%A3o%20-%20Web%20Scraping.png)
+![Comunicação - Autenticação](./image/communication-auth/Diagrama%20de%20Comunica%C3%A7%C3%A3o%20-%20Autentica%C3%A7%C3%A3o.svg)
+![Comunicação - Livros](./image/communication-books/Diagrama%20de%20Comunica%C3%A7%C3%A3o%20-%20Consulta%20de%20Livros.svg)
+![Comunicação - Coleções](./image/communication-collections/Diagrama%20de%20Comunica%C3%A7%C3%A3o%20-%20Cole%C3%A7%C3%B5es%20de%20Usu%C3%A1rio.svg)
+![Comunicação - Admin](./image/communication-admin/Diagrama%20de%20Comunica%C3%A7%C3%A3o%20-%20Administra%C3%A7%C3%A3o%20de%20Livros.svg)
+![Comunicação - Scraping](./image/communication-scraping/Diagrama%20de%20Comunica%C3%A7%C3%A3o%20-%20Web%20Scraping.svg)
 
 ## 3.6 Diagramas de Estados
 
@@ -393,12 +393,12 @@ Os diagramas de máquina de estados modelam o comportamento dinâmico de objetos
 -   Estados iniciais e finais
 -   Choice points e fork/join
 
-![Estado - Sessão de Usuário](./image/state-user-session/Estado%20-%20Sess%C3%A3o%20de%20Usu%C3%A1rio.png)
-![Estado - Ciclo de Vida do Livro](./image/state-book-lifecycle/Estado%20-%20Ciclo%20de%20Vida%20do%20Livro.png)
-![Estado - Ciclo de Vida do Capítulo](./image/state-chapter-lifecycle/Estado%20-%20Ciclo%20de%20Vida%20do%20Cap%C3%ADtulo.png)
-![Estado - Gerenciamento de Coleção](./image/state-collection/Estado%20-%20Cole%C3%A7%C3%A3o%20de%20Livros.png)
-![Estado - Upload de Arquivo](./image/state-file-upload/Estado%20-%20Upload%20e%20Armazenamento%20de%20Arquivos.png)
-![Estado - Sistema de Cache](./image/state-cache-system/Estado%20-%20Cache%20do%20Sistema.png)
+![Estado - Sessão de Usuário](./image/state-user-session/Estado%20-%20Sess%C3%A3o%20de%20Usu%C3%A1rio.svg)
+![Estado - Ciclo de Vida do Livro](./image/state-book-lifecycle/Estado%20-%20Ciclo%20de%20Vida%20do%20Livro.svg)
+![Estado - Ciclo de Vida do Capítulo](./image/state-chapter-lifecycle/Estado%20-%20Ciclo%20de%20Vida%20do%20Cap%C3%ADtulo.svg)
+![Estado - Gerenciamento de Coleção](./image/state-collection/Estado%20-%20Cole%C3%A7%C3%A3o%20de%20Livros.svg)
+![Estado - Upload de Arquivo](./image/state-file-upload/Estado%20-%20Upload%20e%20Armazenamento%20de%20Arquivos.svg)
+![Estado - Sistema de Cache](./image/state-cache-system/Estado%20-%20Cache%20do%20Sistema.svg)
 
 # 4. Modelos de Dados
 
@@ -459,7 +459,7 @@ O modelo de dados é composto por 12 entidades principais e 5 tabelas de junçã
 -   **Constraints**: UNIQUE em email, userName, role.name, tag.name, sensitive_content.name
 -   **Índices**: Otimização em colunas de busca (title, email, userName) e filtros (scrapingStatus, deletedAt)
 
-![Diagrama ER](./image/database/Diagrama%20Entidade-Relacionamento.png)
+![Diagrama ER](./image/database/Diagrama%20Entidade-Relacionamento.svg)
 
 ## 4.2 Estratégias de Mapeamento Objeto-Relacional
 
