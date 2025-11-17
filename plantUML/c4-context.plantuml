@@ -1,0 +1,26 @@
+@startuml C4 Context Diagram
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Diagrama de Contexto (C4 Level 1) - Sistema Gatuno
+
+Person(anonimo, "Usuário Anônimo", "Visitante que navega e busca mangás/livros")
+Person(usuario, "Usuário Autenticado", "Usuário registrado que gerencia coleções e lê mangás")
+Person(admin, "Administrador", "Gerencia catálogo, faz upload e configura scraping")
+
+System(gatuno, "Sistema Gatuno", "Plataforma web de leitura e gerenciamento de mangás e livros")
+
+System_Ext(websites, "Websites de Mangás", "Fontes externas de conteúdo (MangaDex, etc.)")
+System_Ext(email, "Sistema de Email", "SMTP para notificações e recuperação de senha")
+System_Ext(monitoring, "Grafana Cloud", "Monitoramento externo e alertas")
+
+Rel(anonimo, gatuno, "Navega, busca e visualiza mangás", "HTTPS")
+Rel(usuario, gatuno, "Gerencia coleções, marca capítulos como lidos", "HTTPS")
+Rel(admin, gatuno, "Administra catálogo, faz upload, configura scraping", "HTTPS")
+
+Rel(gatuno, websites, "Faz scraping de capítulos e páginas", "HTTPS/Selenium")
+Rel(gatuno, email, "Envia emails de verificação e notificações", "SMTP")
+Rel(gatuno, monitoring, "Envia métricas e logs", "Prometheus/Loki")
+
+@enduml

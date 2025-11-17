@@ -1,0 +1,135 @@
+@startuml C4 Deployment Diagram
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Deployment.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Diagrama de Implantação (C4) - Ambiente de Produção
+
+Deployment_Node(internet, "Internet", "Cloud") {
+    Deployment_Node(cdn, "CDN", "Cloudflare/CloudFront") {
+        Container(static_files, "Static Assets", "JS/CSS/Images", "Arquivos estáticos do frontend")
+    }
+}
+
+Deployment_Node(prod_server, "Servidor de Produção", "Ubuntu 22.04 LTS") {
+
+    Deployment_Node(docker, "Docker Engine", "v24.x") {
+
+        Deployment_Node(traefik_net, "Rede: traefik-proxy-net", "Docker Network") {
+            Deployment_Node(traefik_container, "Container: traefik", "Traefik v3.2") {
+                Container(reverse_proxy, "Reverse Proxy", "Traefik", "Load balancer, SSL termination, routing")
+            }
+        }
+
+        Deployment_Node(app_net, "Rede: gatuno_default", "Docker Network") {
+
+            Deployment_Node(frontend_container, "Container: gatuno-app", "Node 20 + NGINX") {
+                Container(web_app, "Aplicação Web", "Angular 18+", "SPA com Server-Side Rendering")
+            }
+
+            Deployment_Node(backend_container, "Container: gatuno-api", "Node 20 + PM2") {
+                Container(api, "API Backend", "NestJS", "REST API com JWT auth")
+            }
+
+            Deployment_Node(db_master_container, "Container: gatuno-database", "MySQL 8.0") {
+                ContainerDb(db_master, "Database Master", "MySQL 8.0", "Write operations, binary logging")
+            }
+
+            Deployment_Node(db_slave1_container, "Container: gatuno-database-slave-1", "MySQL 8.0") {
+                ContainerDb(db_slave1, "Database Slave 1", "MySQL 8.0", "Read-only replica")
+            }
+
+            Deployment_Node(db_slave2_container, "Container: gatuno-database-slave-2", "MySQL 8.0") {
+                ContainerDb(db_slave2, "Database Slave 2", "MySQL 8.0", "Read-only replica")
+            }
+
+            Deployment_Node(redis_container, "Container: gatuno-redis", "Redis 8.0-alpine") {
+                ContainerDb(cache, "Redis Cache", "Redis 8.0", "Sessions, query cache, rate limiting")
+            }
+
+            Deployment_Node(selenium_hub_container, "Container: selenium-hub", "Selenium Hub") {
+                Container(selenium_hub, "Selenium Hub", "Selenium Grid", "Coordena sessões de scraping")
+            }
+
+            Deployment_Node(selenium_node_container, "Container: node-docker", "Chrome Docker") {
+                Container(chrome_nodes, "Chrome Nodes", "Chrome Headless", "Executa scraping (max 4 sessões)")
+            }
+        }
+
+        Deployment_Node(monitoring_net, "Rede: monitoring", "Docker Network") {
+            Deployment_Node(prometheus_container, "Container: prometheus", "Prometheus") {
+                Container(prometheus, "Prometheus", "Metrics DB", "Coleta métricas da API")
+            }
+
+            Deployment_Node(grafana_container, "Container: grafana", "Grafana") {
+                Container(grafana, "Grafana", "Dashboard", "Visualização de métricas")
+            }
+
+            Deployment_Node(alertmanager_container, "Container: alertmanager", "AlertManager") {
+                Container(alertmanager, "AlertManager", "Alerting", "Notificações (email, slack)")
+            }
+        }
+    }
+
+    Deployment_Node(volumes, "Docker Volumes", "Persistent Storage") {
+        ContainerDb(db_data, "database-data", "Volume", "Dados do MySQL Master")
+        ContainerDb(redis_data, "redis_data", "Volume", "Dados do Redis")
+        Container(api_data, "api-data", "Volume", "Capas e páginas de mangás")
+    }
+}
+
+Rel(internet, reverse_proxy, "HTTPS :443", "TLS 1.3")
+Rel(internet, cdn, "HTTPS", "Static assets")
+
+Rel(reverse_proxy, web_app, "Routes requests", "HTTP :80")
+Rel(reverse_proxy, api, "Routes /api/*", "HTTP :3000")
+Rel(reverse_proxy, grafana, "Routes /grafana/*", "HTTP :3001")
+
+Rel(web_app, api, "API calls", "HTTP/JSON")
+
+Rel(api, db_master, "Write ops", "MySQL :3306")
+Rel(api, db_slave1, "Read ops", "MySQL :3306")
+Rel(api, db_slave2, "Read ops", "MySQL :3306")
+Rel(api, cache, "Cache ops", "Redis :6379")
+
+Rel(db_master, db_slave1, "Replication", "Binlog")
+Rel(db_master, db_slave2, "Replication", "Binlog")
+
+Rel(api, selenium_hub, "Scraping jobs", "HTTP :4444")
+Rel(selenium_hub, chrome_nodes, "WebDriver", "Event Bus :4442/4443")
+
+Rel(api, prometheus, "Metrics", "/metrics")
+Rel(prometheus, grafana, "Data source", "PromQL")
+Rel(prometheus, alertmanager, "Alerts", "HTTP")
+
+Rel(db_master_container, db_data, "Mounts")
+Rel(redis_container, redis_data, "Mounts")
+Rel(backend_container, api_data, "Mounts")
+
+note right of reverse_proxy
+  **Traefik Features:**
+  - Let's Encrypt SSL
+  - HTTP → HTTPS redirect
+  - Load balancing
+  - Rate limiting
+  - Circuit breaker
+end note
+
+note right of db_master
+  **Master-Slave Replication:**
+  - Master: Write operations
+  - Slaves: Read operations (load balanced)
+  - GTID-based replication
+  - Automatic failover (manual)
+end note
+
+note right of cache
+  **Redis Configuration:**
+  - AOF persistence
+  - maxmemory-policy: allkeys-lru
+  - Password protected
+  - Session TTL: 7 days
+  - Query cache TTL: 5-30min
+end note
+
+@enduml

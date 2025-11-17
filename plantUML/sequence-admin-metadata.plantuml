@@ -1,0 +1,307 @@
+@startuml Sequência - Administração de Metadados
+
+title Diagrama de Sequência - Administração de Metadados (Admin)
+
+' ===== UC-50: Mesclar Tags =====
+actor "Administrador" as Admin1
+participant "TagsController" as Ctrl1
+participant "JwtAuthGuard\n+ RoleGuard" as Guard1
+participant "TagsService" as Svc1
+database "Database" as DB1
+participant "Cache" as Cache1
+
+== UC-50: Mesclar Tags ==
+
+Admin1 -> Ctrl1: PATCH /tags/{tagId}/merge\n[tagId2, tagId3, ...]\nAuthorization: Bearer {adminToken}
+activate Ctrl1
+
+Ctrl1 -> Guard1: validate(token, role=ADMIN)
+activate Guard1
+Guard1 --> Ctrl1: currentUser (admin)
+deactivate Guard1
+
+Ctrl1 -> Svc1: mergeTags(tagId, tagIds[])
+activate Svc1
+
+Svc1 -> DB1: SELECT FROM tags WHERE id = tagId
+activate DB1
+DB1 --> Svc1: targetTag
+deactivate DB1
+
+loop Para cada tagId a mesclar
+    Svc1 -> DB1: SELECT FROM tags WHERE id = ?
+    activate DB1
+    DB1 --> Svc1: sourceTag
+    deactivate DB1
+
+    note right of Svc1
+      Combina altNames das tags
+      sourceTag com targetTag
+    end note
+
+    Svc1 -> Svc1: mergeAltNames(targetTag, sourceTag)
+end
+
+Svc1 -> DB1: BEGIN TRANSACTION
+activate DB1
+
+Svc1 -> DB1: UPDATE books_tags\nSET tagId = targetTagId\nWHERE tagId IN (tagIds)
+DB1 --> Svc1: updated
+
+loop Para cada tagId
+    Svc1 -> DB1: DELETE FROM tags WHERE id = ?
+    DB1 --> Svc1: deleted
+end
+
+Svc1 -> DB1: UPDATE tags\nSET altNames = merged\nWHERE id = targetTagId
+DB1 --> Svc1: updated
+
+Svc1 -> DB1: COMMIT TRANSACTION
+DB1 --> Svc1: committed
+deactivate DB1
+
+Svc1 -> Cache1: invalidate("tags:*")
+activate Cache1
+Cache1 --> Svc1: cleared
+deactivate Cache1
+
+Svc1 --> Ctrl1: success
+deactivate Svc1
+
+Ctrl1 --> Admin1: 200 OK\n{message: "Tags merged"}
+deactivate Ctrl1
+
+|||
+
+' ===== UC-51: Mesclar Autores =====
+actor "Administrador" as Admin2
+participant "AuthorsController" as Ctrl2
+participant "JwtAuthGuard\n+ RoleGuard" as Guard2
+participant "AuthorsService" as Svc2
+database "Database" as DB2
+participant "Cache" as Cache2
+
+== UC-51: Mesclar Autores ==
+
+Admin2 -> Ctrl2: PATCH /authors/{authorId}/merge?ids=id2,id3\nAuthorization: Bearer {adminToken}
+activate Ctrl2
+
+Ctrl2 -> Guard2: validate(token, role=ADMIN)
+activate Guard2
+Guard2 --> Ctrl2: currentUser (admin)
+deactivate Guard2
+
+Ctrl2 -> Svc2: mergeAuthors(authorId, authorIds[])
+activate Svc2
+
+Svc2 -> DB2: SELECT FROM authors WHERE id = authorId
+activate DB2
+DB2 --> Svc2: targetAuthor
+deactivate DB2
+
+loop Para cada authorId a mesclar
+    Svc2 -> DB2: SELECT FROM authors WHERE id = ?
+    activate DB2
+    DB2 --> Svc2: sourceAuthor
+    deactivate DB2
+
+    Svc2 -> Svc2: mergeBiography(targetAuthor, sourceAuthor)
+end
+
+Svc2 -> DB2: BEGIN TRANSACTION
+activate DB2
+
+Svc2 -> DB2: UPDATE books_authors\nSET authorId = targetAuthorId\nWHERE authorId IN (authorIds)
+DB2 --> Svc2: updated
+
+loop Para cada authorId
+    Svc2 -> DB2: DELETE FROM authors WHERE id = ?
+    DB2 --> Svc2: deleted
+end
+
+Svc2 -> DB2: UPDATE authors\nSET biography = merged\nWHERE id = targetAuthorId
+DB2 --> Svc2: updated
+
+Svc2 -> DB2: COMMIT TRANSACTION
+DB2 --> Svc2: committed
+deactivate DB2
+
+Svc2 -> Cache2: invalidate("authors:*")
+activate Cache2
+Cache2 --> Svc2: cleared
+deactivate Cache2
+
+Svc2 --> Ctrl2: success
+deactivate Svc2
+
+Ctrl2 --> Admin2: 200 OK\n{message: "Authors merged"}
+deactivate Ctrl2
+
+|||
+
+' ===== UC-52: Criar Conteúdo Sensível =====
+actor "Administrador" as Admin3
+participant "SensitiveContentController" as Ctrl3
+participant "JwtAuthGuard" as Guard3
+participant "SensitiveContentService" as Svc3
+database "Database" as DB3
+participant "Cache" as Cache3
+
+== UC-52: Criar Conteúdo Sensível ==
+
+Admin3 -> Ctrl3: POST /sensitive-content\n{name, altNames[], weight}\nAuthorization: Bearer {adminToken}
+activate Ctrl3
+
+Ctrl3 -> Guard3: validate(token)
+activate Guard3
+Guard3 --> Ctrl3: currentUser
+deactivate Guard3
+
+Ctrl3 -> Svc3: create(dto)
+activate Svc3
+
+Svc3 -> DB3: SELECT FROM sensitive_content\nWHERE name = ?
+activate DB3
+DB3 --> Svc3: null (não existe)
+deactivate DB3
+
+Svc3 -> DB3: INSERT INTO sensitive_content\n(name, altNames, weight)
+activate DB3
+DB3 --> Svc3: sensitiveContent
+deactivate DB3
+
+Svc3 -> Cache3: invalidate("sensitive-content:*")
+activate Cache3
+Cache3 --> Svc3: cleared
+deactivate Cache3
+
+Svc3 --> Ctrl3: SensitiveContent
+deactivate Svc3
+
+Ctrl3 --> Admin3: 201 Created\n{sensitiveContent}
+deactivate Ctrl3
+
+|||
+
+' ===== UC-55: Mesclar Conteúdo Sensível =====
+actor "Administrador" as Admin4
+participant "SensitiveContentController" as Ctrl4
+participant "JwtAuthGuard" as Guard4
+participant "SensitiveContentService" as Svc4
+database "Database" as DB4
+participant "Cache" as Cache4
+
+== UC-55: Mesclar Conteúdo Sensível ==
+
+Admin4 -> Ctrl4: PATCH /sensitive-content/{contentId}/merge\n[contentId2, contentId3]\nAuthorization: Bearer {adminToken}
+activate Ctrl4
+
+Ctrl4 -> Guard4: validate(token)
+activate Guard4
+Guard4 --> Ctrl4: currentUser
+deactivate Guard4
+
+Ctrl4 -> Svc4: mergeSensitiveContent(contentId, contentIds[])
+activate Svc4
+
+Svc4 -> DB4: SELECT FROM sensitive_content\nWHERE id = contentId
+activate DB4
+DB4 --> Svc4: targetContent
+deactivate DB4
+
+loop Para cada contentId a mesclar
+    Svc4 -> DB4: SELECT FROM sensitive_content WHERE id = ?
+    activate DB4
+    DB4 --> Svc4: sourceContent
+    deactivate DB4
+
+    Svc4 -> Svc4: mergeAltNames(targetContent, sourceContent)
+    Svc4 -> Svc4: calculateMaxWeight(targetContent, sourceContent)
+end
+
+Svc4 -> DB4: BEGIN TRANSACTION
+activate DB4
+
+Svc4 -> DB4: UPDATE books_sensitive_content\nSET sensitiveContentId = targetContentId\nWHERE sensitiveContentId IN (contentIds)
+DB4 --> Svc4: updated
+
+loop Para cada contentId
+    Svc4 -> DB4: DELETE FROM sensitive_content WHERE id = ?
+    DB4 --> Svc4: deleted
+end
+
+Svc4 -> DB4: UPDATE sensitive_content\nSET altNames = merged, weight = max\nWHERE id = targetContentId
+DB4 --> Svc4: updated
+
+Svc4 -> DB4: COMMIT TRANSACTION
+DB4 --> Svc4: committed
+deactivate DB4
+
+Svc4 -> Cache4: invalidate("sensitive-content:*")
+activate Cache4
+Cache4 --> Svc4: cleared
+deactivate Cache4
+
+Svc4 -> Cache4: invalidate("books:*")
+activate Cache4
+Cache4 --> Svc4: cleared
+deactivate Cache4
+
+note right of Svc4
+  Invalida cache de livros
+  pois afeta filtro de
+  conteúdo sensível
+end note
+
+Svc4 --> Ctrl4: success
+deactivate Svc4
+
+Ctrl4 --> Admin4: 200 OK\n{message: "Content merged"}
+deactivate Ctrl4
+
+|||
+
+' ===== UC-58: Registrar Site para Scraping =====
+actor "Administrador" as Admin5
+participant "WebsiteController" as Ctrl5
+participant "JwtAuthGuard\n+ RoleGuard" as Guard5
+participant "WebsiteService" as Svc5
+database "Database" as DB5
+
+== UC-58: Registrar Site para Scraping ==
+
+Admin5 -> Ctrl5: POST /website\n{url, selector, preScript, posScript, concurrencyLimit}\nAuthorization: Bearer {adminToken}
+activate Ctrl5
+
+Ctrl5 -> Guard5: validate(token, role=ADMIN)
+activate Guard5
+Guard5 --> Ctrl5: currentUser (admin)
+deactivate Guard5
+
+Ctrl5 -> Svc5: registerWebsite(dto)
+activate Svc5
+
+Svc5 -> DB5: SELECT FROM websites WHERE url = ?
+activate DB5
+DB5 --> Svc5: null (não existe)
+deactivate DB5
+
+Svc5 -> DB5: INSERT INTO websites\n(url, selector, preScript, posScript, concurrencyLimit, ignoreFiles)
+activate DB5
+DB5 --> Svc5: website
+deactivate DB5
+
+note right of Svc5
+  Website registrado para
+  scraping automatizado.
+  Jobs agendados usarão
+  estas configurações.
+end note
+
+Svc5 --> Ctrl5: Website
+deactivate Svc5
+
+Ctrl5 --> Admin5: 201 Created\n{website}
+deactivate Ctrl5
+
+@enduml

@@ -1,0 +1,195 @@
+@startuml Diagrama de Comunicação - Coleções de Usuário
+
+title Diagrama de Comunicação - UC-17: Criar Coleção
+
+' Objetos
+object ":Cliente\nWeb" as Client
+object ":CollectionsBooksController" as Controller
+object ":CollectionsBooksService" as Service
+object ":CollectionRepository" as CollectionRepo
+object ":JWTGuard" as Guard
+object ":Database\nMySQL Master" as DBMaster
+
+' === UC-17: CRIAR COLEÇÃO ===
+
+Client -> Controller : **1:** POST /collections(name, description)\nAuthorization: Bearer token
+
+Guard -> Client : **1.0.1:** validateToken()
+Client -> Guard : **1.0.2:** JWT
+Guard --> Controller : **1.0.3:** user={id, email, role}
+
+Controller -> Service : **1.1:** create(userId, createCollectionDto)
+
+Service -> CollectionRepo : **1.1.1:** save({name, description, userId})
+CollectionRepo -> DBMaster : **1.1.1.1:** INSERT INTO collections (name, description, user_id, created_at)\nVALUES (?, ?, ?, NOW())
+DBMaster --> CollectionRepo : **1.1.1.2:** newCollection
+CollectionRepo --> Service : **1.1.2:** collection
+
+Service --> Controller : **1.2:** collection
+Controller --> Client : **2:** 201 Created {collection}
+
+note bottom of Client
+    **Fluxo UC-17: Criar Coleção**
+    1. Cliente autenticado envia dados
+    2. JWT Guard valida token e extrai userId
+    3. Serviço cria coleção vinculada ao usuário
+    4. Inserção no database master (write)
+    5. Retorna coleção criada
+
+    **Validações:**
+    - Usuário autenticado (JWT)
+    - Nome obrigatório (max 100 chars)
+    - Descrição opcional (max 500 chars)
+    - Coleção pertence ao userId do token
+end note
+
+@enduml
+
+@startuml Diagrama de Comunicação - UC-18: Adicionar Livro à Coleção
+
+title Diagrama de Comunicação - UC-18: Adicionar Livro à Coleção
+
+' Objetos
+object ":Cliente\nWeb" as Client
+object ":CollectionsBooksController" as Controller
+object ":CollectionsBooksService" as Service
+object ":CollectionRepository" as CollectionRepo
+object ":BookRepository" as BookRepo
+object ":CollectionBookRepository" as CollectionBookRepo
+object ":JWTGuard" as Guard
+object ":RedisCache" as Cache
+object ":Database\nMySQL Master" as DBMaster
+object ":Database\nMySQL Slave" as DBSlave
+
+' === UC-18: ADICIONAR LIVRO ===
+
+Client -> Controller : **1:** POST /collections/:collectionId/books\n{bookId}\nAuthorization: Bearer token
+
+Guard -> Client : **1.0.1:** validateToken()
+Client -> Guard : **1.0.2:** JWT
+Guard --> Controller : **1.0.3:** user={id}
+
+Controller -> Service : **1.1:** addBook(userId, collectionId, bookId)
+
+Service -> CollectionRepo : **1.1.1:** findOne({id: collectionId, userId})
+CollectionRepo -> DBSlave : **1.1.1.1:** SELECT * FROM collections WHERE id=? AND user_id=?
+DBSlave --> CollectionRepo : **1.1.1.2:** collectionData
+CollectionRepo --> Service : **1.1.2:** collection (ownership verified)
+
+Service -> BookRepo : **1.1.3:** findOne({id: bookId, deletedAt: null})
+BookRepo -> DBSlave : **1.1.3.1:** SELECT * FROM books WHERE id=? AND deleted_at IS NULL
+DBSlave --> BookRepo : **1.1.3.2:** bookData
+BookRepo --> Service : **1.1.4:** book (exists and active)
+
+Service -> CollectionBookRepo : **1.1.5:** findOne({collectionId, bookId})
+CollectionBookRepo -> DBSlave : **1.1.5.1:** SELECT * FROM collection_books WHERE collection_id=? AND book_id=?
+DBSlave --> CollectionBookRepo : **1.1.5.2:** null (not exists)
+CollectionBookRepo --> Service : **1.1.6:** null (can add)
+
+Service -> CollectionBookRepo : **1.1.7:** save({collectionId, bookId, addedAt: now()})
+CollectionBookRepo -> DBMaster : **1.1.7.1:** INSERT INTO collection_books (collection_id, book_id, added_at)\nVALUES (?, ?, NOW())
+DBMaster --> CollectionBookRepo : **1.1.7.2:** relationCreated
+CollectionBookRepo --> Service : **1.1.8:** collectionBook
+
+Service -> Cache : **1.1.9:** del("user:" + userId + ":collections")
+note right: Invalida cache de coleções do usuário
+Cache --> Service : **1.1.10:** OK
+
+Service --> Controller : **1.2:** {message: "Livro adicionado", collectionBook}
+Controller --> Client : **2:** 200 OK {message, data}
+
+note bottom of Client
+    **Fluxo UC-18: Adicionar Livro à Coleção**
+    1. Cliente envia bookId para coleção
+    2. JWT valida identidade do usuário
+    3. Verifica ownership da coleção (user_id)
+    4. Valida que livro existe e está ativo
+    5. Verifica se livro já não está na coleção
+    6. Cria relação many-to-many
+    7. Invalida cache de coleções
+    8. Retorna confirmação
+
+    **Regras de Negócio:**
+    - Usuário só pode adicionar em suas coleções
+    - Livro não pode ser duplicado na mesma coleção
+    - Livro deve estar ativo (não deleted)
+    - Relação registra timestamp (addedAt)
+end note
+
+@enduml
+
+@startuml Diagrama de Comunicação - UC-15: Listar Minhas Coleções
+
+title Diagrama de Comunicação - UC-15: Listar Minhas Coleções
+
+' Objetos
+object ":Cliente\nWeb" as Client
+object ":CollectionsBooksController" as Controller
+object ":CollectionsBooksService" as Service
+object ":CollectionRepository" as CollectionRepo
+object ":JWTGuard" as Guard
+object ":RedisCache" as Cache
+object ":Database\nMySQL Slave" as DBSlave
+
+' === UC-15: LISTAR COLEÇÕES ===
+
+Client -> Controller : **1:** GET /collections\nAuthorization: Bearer token
+
+Guard -> Client : **1.0.1:** validateToken()
+Client -> Guard : **1.0.2:** JWT
+Guard --> Controller : **1.0.3:** user={id}
+
+Controller -> Service : **1.1:** findAllByUser(userId)
+
+Service -> Cache : **1.1.1:** get("user:" + userId + ":collections")
+Cache --> Service : **1.1.2:** null (cache miss)
+
+Service -> CollectionRepo : **1.1.3:** find({userId}, {relations: ['books.book']})
+note right
+    Relations:
+    - collectionBooks (junction table)
+    - collectionBooks.book (eager load)
+    Order: createdAt DESC
+end note
+
+CollectionRepo -> DBSlave : **1.1.3.1:** SELECT c.*, cb.*, b.*\nFROM collections c\nLEFT JOIN collection_books cb ON c.id = cb.collection_id\nLEFT JOIN books b ON cb.book_id = b.id\nWHERE c.user_id=? AND b.deleted_at IS NULL\nORDER BY c.created_at DESC
+DBSlave --> CollectionRepo : **1.1.3.2:** collectionsData[]
+CollectionRepo --> Service : **1.1.4:** collections[]
+
+Service -> Service : **1.1.5:** transformCollections(collections)
+note right
+    Para cada coleção:
+    - Adiciona count de livros
+    - Mapeia preview de capas
+    - Formata datas
+    - Remove livros deletados
+end note
+
+Service -> Cache : **1.1.6:** set("user:" + userId + ":collections", transformed, TTL=5min)
+Cache --> Service : **1.1.7:** OK
+
+Service --> Controller : **1.2:** collections[]
+Controller --> Client : **2:** 200 OK {collections[]}
+
+note bottom of Client
+    **Fluxo UC-15: Listar Minhas Coleções**
+    1. Cliente autenticado solicita coleções
+    2. JWT extrai userId
+    3. Verifica cache (5min TTL)
+    4. Consulta coleções do usuário no slave
+    5. Eager load: collection_books + books
+    6. Transforma dados:
+       - Total de livros por coleção
+       - Preview de capas (primeiras 4)
+       - Remove livros deletados
+    7. Cacheia resultado
+    8. Retorna lista de coleções
+
+    **Retorno:**
+    - collection.id, name, description
+    - collection.booksCount
+    - collection.coverPreviews[] (URLs)
+    - collection.createdAt, updatedAt
+end note
+
+@enduml

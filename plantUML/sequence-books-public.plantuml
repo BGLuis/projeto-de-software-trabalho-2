@@ -1,0 +1,191 @@
+@startuml Sequência - Consulta Pública de Livros
+
+title Diagrama de Sequência - Consulta Pública de Livros
+
+' ===== UC-07: Listar Livros =====
+actor "Usuário" as User1
+participant "BooksController" as Ctrl1
+participant "OptionalAuthGuard" as Guard1
+participant "BooksService" as Svc1
+participant "BookQueryService" as QuerySvc1
+participant "Cache" as Cache1
+database "Database" as DB1
+
+== UC-07: Listar Livros ==
+
+User1 -> Ctrl1: GET /books?page=1&limit=20&search=naruto
+activate Ctrl1
+
+Ctrl1 -> Guard1: checkAuth(optional)
+activate Guard1
+Guard1 --> Ctrl1: user? (pode ser null)
+deactivate Guard1
+
+Ctrl1 -> Cache1: get("books:page1:limit20:naruto")
+activate Cache1
+Cache1 --> Ctrl1: null (cache miss)
+deactivate Cache1
+
+Ctrl1 -> Svc1: getAllBooks(pageOptions, maxWeight?)
+activate Svc1
+
+Svc1 -> QuerySvc1: buildQuery(pageOptions, maxWeight)
+activate QuerySvc1
+QuerySvc1 --> Svc1: query
+deactivate QuerySvc1
+
+Svc1 -> DB1: SELECT books\nWHERE title LIKE '%naruto%'\nAND sensitiveContent.weight <= maxWeight\nLIMIT 20 OFFSET 0
+activate DB1
+DB1 --> Svc1: books[], total
+deactivate DB1
+
+Svc1 -> Svc1: buildPageDto(books, total, page, limit)
+
+Svc1 --> Ctrl1: PageDto<Book>
+deactivate Svc1
+
+Ctrl1 -> Cache1: set("books:page1:limit20:naruto", data, 180s)
+activate Cache1
+Cache1 --> Ctrl1: cached
+deactivate Cache1
+
+Ctrl1 --> User1: 200 OK\n{data: books[], meta: {total, page, limit}}
+deactivate Ctrl1
+
+|||
+
+' ===== UC-09: Visualizar Detalhes do Livro =====
+actor "Usuário" as User2
+participant "BooksController" as Ctrl2
+participant "BooksService" as Svc2
+participant "Cache" as Cache2
+database "Database" as DB2
+
+== UC-09: Visualizar Detalhes do Livro ==
+
+User2 -> Ctrl2: GET /books/{idBook}
+activate Ctrl2
+
+Ctrl2 -> Cache2: get("book:{idBook}")
+activate Cache2
+Cache2 --> Ctrl2: null (cache miss)
+deactivate Cache2
+
+Ctrl2 -> Svc2: getOne(idBook, maxWeight?)
+activate Svc2
+
+Svc2 -> DB2: SELECT book\nWHERE id = idBook\nAND deletedAt IS NULL\nJOIN authors, tags, covers, sensitiveContent
+activate DB2
+DB2 --> Svc2: book with relations
+deactivate DB2
+
+alt Conteúdo sensível acima do permitido
+    Svc2 -> Svc2: filterSensitiveContent(book, maxWeight)
+end
+
+Svc2 --> Ctrl2: Book
+deactivate Svc2
+
+Ctrl2 -> Cache2: set("book:{idBook}", book, 1800s)
+activate Cache2
+Cache2 --> Ctrl2: cached
+deactivate Cache2
+
+Ctrl2 --> User2: 200 OK\n{book details}
+deactivate Ctrl2
+
+|||
+
+' ===== UC-10: Listar Capítulos do Livro =====
+actor "Usuário" as User3
+participant "BooksController" as Ctrl3
+participant "BooksService" as Svc3
+participant "Cache" as Cache3
+database "Database" as DB3
+
+== UC-10: Listar Capítulos do Livro ==
+
+User3 -> Ctrl3: GET /books/{idBook}/chapters
+activate Ctrl3
+
+Ctrl3 -> Cache3: get("chapters:{idBook}:{userId}")
+activate Cache3
+Cache3 --> Ctrl3: null
+deactivate Cache3
+
+Ctrl3 -> Svc3: getChapters(idBook, userId?, maxWeight?)
+activate Svc3
+
+Svc3 -> DB3: SELECT chapters\nWHERE bookId = idBook\nAND deletedAt IS NULL\nORDER BY index ASC
+activate DB3
+DB3 --> Svc3: chapters[]
+deactivate DB3
+
+alt Usuário autenticado
+    Svc3 -> DB3: SELECT chapters_read\nWHERE userId = userId\nAND chapterId IN (chapters)
+    activate DB3
+    DB3 --> Svc3: readChapters[]
+    deactivate DB3
+
+    Svc3 -> Svc3: markReadChapters(chapters, readChapters)
+end
+
+Svc3 --> Ctrl3: chapters[] (with read status)
+deactivate Svc3
+
+Ctrl3 -> Cache3: set("chapters:{idBook}:{userId}", chapters, 600s)
+activate Cache3
+Cache3 --> Ctrl3: cached
+deactivate Cache3
+
+Ctrl3 --> User3: 200 OK\n[{chapter, isRead}]
+deactivate Ctrl3
+
+|||
+
+' ===== UC-13: Visualizar Capítulo =====
+actor "Usuário" as User4
+participant "ChapterController" as Ctrl4
+participant "ChapterService" as Svc4
+participant "Cache" as Cache4
+database "Database" as DB4
+
+== UC-13: Visualizar Capítulo ==
+
+User4 -> Ctrl4: GET /chapters/{idChapter}
+activate Ctrl4
+
+Ctrl4 -> Cache4: get("chapter:{idChapter}")
+activate Cache4
+Cache4 --> Ctrl4: null
+deactivate Cache4
+
+Ctrl4 -> Svc4: getChapter(idChapter, userId?)
+activate Svc4
+
+Svc4 -> DB4: SELECT chapter\nWHERE id = idChapter\nAND deletedAt IS NULL\nJOIN pages, book
+activate DB4
+DB4 --> Svc4: chapter with pages and book
+deactivate DB4
+
+alt Usuário autenticado
+    Svc4 -> DB4: SELECT FROM chapters_read\nWHERE chapterId = idChapter\nAND userId = userId
+    activate DB4
+    DB4 --> Svc4: readStatus
+    deactivate DB4
+end
+
+Svc4 -> Svc4: buildChapterResponse(chapter, pages, readStatus)
+
+Svc4 --> Ctrl4: Chapter with pages
+deactivate Svc4
+
+Ctrl4 -> Cache4: set("chapter:{idChapter}", chapter, 600s)
+activate Cache4
+Cache4 --> Ctrl4: cached
+deactivate Cache4
+
+Ctrl4 --> User4: 200 OK\n{chapter, pages[], book, isRead}
+deactivate Ctrl4
+
+@enduml

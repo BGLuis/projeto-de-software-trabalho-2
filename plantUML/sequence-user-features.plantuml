@@ -1,0 +1,195 @@
+@startuml Sequência - Funcionalidades de Usuário Autenticado
+
+title Diagrama de Sequência - Usuário Autenticado
+
+' ===== UC-06: Atualizar Perfil =====
+actor "Usuário\nAutenticado" as User1
+participant "UsersController" as Ctrl1
+participant "JwtAuthGuard" as Guard1
+participant "UsersService" as Svc1
+database "Database" as DB1
+
+== UC-06: Atualizar Perfil ==
+
+User1 -> Ctrl1: PATCH /users\n{name, userName}\nAuthorization: Bearer {token}
+activate Ctrl1
+
+Ctrl1 -> Guard1: validate(token)
+activate Guard1
+Guard1 --> Ctrl1: currentUser {userId}
+deactivate Guard1
+
+Ctrl1 -> Svc1: updateUser(dto, userId)
+activate Svc1
+
+Svc1 -> DB1: UPDATE users\nSET name = ?, userName = ?\nWHERE id = userId
+activate DB1
+DB1 --> Svc1: updated user
+deactivate DB1
+
+Svc1 --> Ctrl1: User
+deactivate Svc1
+
+Ctrl1 --> User1: 200 OK\n{user updated}
+deactivate Ctrl1
+
+|||
+
+' ===== UC-14: Marcar Capítulo como Lido =====
+actor "Usuário\nAutenticado" as User2
+participant "ChapterController" as Ctrl2
+participant "JwtAuthGuard" as Guard2
+participant "ChapterService" as Svc2
+database "Database" as DB2
+
+== UC-14: Marcar Capítulo como Lido ==
+
+User2 -> Ctrl2: GET /chapters/{idChapter}/read\nAuthorization: Bearer {token}
+activate Ctrl2
+
+Ctrl2 -> Guard2: validate(token)
+activate Guard2
+Guard2 --> Ctrl2: currentUser {userId}
+deactivate Guard2
+
+Ctrl2 -> Svc2: markChapterAsRead(idChapter, userId)
+activate Svc2
+
+Svc2 -> DB2: SELECT FROM chapters\nWHERE id = idChapter
+activate DB2
+DB2 --> Svc2: chapter
+deactivate DB2
+
+Svc2 -> DB2: SELECT FROM chapters_read\nWHERE chapterId = idChapter\nAND userId = userId
+activate DB2
+DB2 --> Svc2: null (não lido ainda)
+deactivate DB2
+
+Svc2 -> DB2: INSERT INTO chapters_read\n(userId, chapterId, readAt)
+activate DB2
+DB2 --> Svc2: chapterRead
+deactivate DB2
+
+Svc2 --> Ctrl2: ChapterRead
+deactivate Svc2
+
+Ctrl2 --> User2: 200 OK\n{message: "Chapter marked as read"}
+deactivate Ctrl2
+
+|||
+
+' ===== UC-17: Criar Coleção =====
+actor "Usuário\nAutenticado" as User3
+participant "CollectionsBooksController" as Ctrl3
+participant "JwtAuthGuard" as Guard3
+participant "CollectionsBooksService" as Svc3
+database "Database" as DB3
+
+== UC-17: Criar Coleção ==
+
+User3 -> Ctrl3: POST /collections\n{title}\nAuthorization: Bearer {token}
+activate Ctrl3
+
+Ctrl3 -> Guard3: validate(token)
+activate Guard3
+Guard3 --> Ctrl3: currentUser {userId}
+deactivate Guard3
+
+Ctrl3 -> Svc3: createCollectionBook(dto, userId)
+activate Svc3
+
+Svc3 -> DB3: INSERT INTO collection_book\n(title, userId)
+activate DB3
+DB3 --> Svc3: collection
+deactivate DB3
+
+Svc3 --> Ctrl3: CollectionBook
+deactivate Svc3
+
+Ctrl3 --> User3: 201 Created\n{collection}
+deactivate Ctrl3
+
+|||
+
+' ===== UC-18: Adicionar Livro à Coleção =====
+actor "Usuário\nAutenticado" as User4
+participant "CollectionsBooksController" as Ctrl4
+participant "JwtAuthGuard" as Guard4
+participant "CollectionsBooksService" as Svc4
+database "Database" as DB4
+
+== UC-18: Adicionar Livro à Coleção ==
+
+User4 -> Ctrl4: POST /collections/{idCollection}/books\n{bookIds: [id1, id2]}\nAuthorization: Bearer {token}
+activate Ctrl4
+
+Ctrl4 -> Guard4: validate(token)
+activate Guard4
+Guard4 --> Ctrl4: currentUser {userId}
+deactivate Guard4
+
+Ctrl4 -> Svc4: addBookToCollection(dto, idCollection, userId)
+activate Svc4
+
+Svc4 -> DB4: SELECT FROM collection_book\nWHERE id = idCollection\nAND userId = userId
+activate DB4
+DB4 --> Svc4: collection
+deactivate DB4
+
+alt Coleção não pertence ao usuário
+    Svc4 --> Ctrl4: ForbiddenException
+    Ctrl4 --> User4: 403 Forbidden
+else Coleção válida
+    loop Para cada bookId
+        Svc4 -> DB4: SELECT FROM books\nWHERE id = bookId
+        activate DB4
+        DB4 --> Svc4: book
+        deactivate DB4
+
+        Svc4 -> DB4: INSERT INTO collection_book_books\n(collectionBookId, bookId)
+        activate DB4
+        DB4 --> Svc4: inserted
+        deactivate DB4
+    end
+
+    Svc4 --> Ctrl4: success
+    deactivate Svc4
+
+    Ctrl4 --> User4: 200 OK\n{message: "Books added"}
+    deactivate Ctrl4
+end
+
+|||
+
+' ===== UC-15: Listar Minhas Coleções =====
+actor "Usuário\nAutenticado" as User5
+participant "CollectionsBooksController" as Ctrl5
+participant "JwtAuthGuard" as Guard5
+participant "CollectionsBooksService" as Svc5
+database "Database" as DB5
+
+== UC-15: Listar Minhas Coleções ==
+
+User5 -> Ctrl5: GET /collections\nAuthorization: Bearer {token}
+activate Ctrl5
+
+Ctrl5 -> Guard5: validate(token)
+activate Guard5
+Guard5 --> Ctrl5: currentUser {userId}
+deactivate Guard5
+
+Ctrl5 -> Svc5: getCollections(userId)
+activate Svc5
+
+Svc5 -> DB5: SELECT FROM collection_book\nWHERE userId = userId\nLEFT JOIN books
+activate DB5
+DB5 --> Svc5: collections[]
+deactivate DB5
+
+Svc5 --> Ctrl5: CollectionBook[]
+deactivate Svc5
+
+Ctrl5 --> User5: 200 OK\n[{collection, books[]}]
+deactivate Ctrl5
+
+@enduml

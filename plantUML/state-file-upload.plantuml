@@ -1,0 +1,198 @@
+@startuml Estado - Upload e Armazenamento de Arquivos
+
+title Diagrama de Estados - Upload e Armazenamento de Arquivos
+
+state "Upload Iniciado" as Iniciado {
+    [*] --> RecebendoArquivo
+    RecebendoArquivo : Cliente envia arquivo(s)
+    RecebendoArquivo : Content-Type: multipart/form-data
+}
+
+[*] --> Iniciado : Admin inicia upload
+
+Iniciado --> ValidandoArquivo : Arquivo recebido
+
+state ValidandoArquivo {
+    [*] --> VerificandoTipo
+    VerificandoTipo --> ErroTipoInvalido : Não é imagem
+    VerificandoTipo --> VerificandoTamanho : Tipo válido (image/*)
+    VerificandoTamanho --> ErroTamanhoExcedido : > 10MB
+    VerificandoTamanho --> VerificandoQuantidade : Tamanho OK
+    VerificandoQuantidade --> ErroQuantidadeExcedida : > limite (10-100)
+    VerificandoQuantidade --> ArquivoValido : Quantidade OK
+}
+
+ValidandoArquivo --> Rejeitado : Validação falhou
+
+state Rejeitado {
+    [*] --> ErroRegistrado
+    ErroRegistrado : 400 Bad Request
+    ErroRegistrado : Mensagem de erro retornada
+}
+
+Rejeitado --> [*] : Erro retornado ao cliente
+
+ValidandoArquivo --> ProcessandoUpload : Validação passou
+
+state ProcessandoUpload {
+    [*] --> DeterminarTipo
+
+    state DeterminarTipo <<choice>>
+    DeterminarTipo --> UploadCapa : Tipo = Capa
+    DeterminarTipo --> UploadPaginas : Tipo = Páginas
+
+    state UploadCapa {
+        [*] --> VerificandoLivro
+        VerificandoLivro --> LivroNaoEncontrado : Livro não existe
+        VerificandoLivro --> PreparandoCapa : Livro existe
+
+        state PreparandoCapa {
+            [*] --> GerandoNomeUnico
+            GerandoNomeUnico --> GerandoCaminho : UUID gerado
+            GerandoCaminho --> [*] : Path construído
+        }
+
+        PreparandoCapa --> SalvandoCapa : Pronto
+    }
+
+    state UploadPaginas {
+        [*] --> VerificandoCapitulo
+        VerificandoCapitulo --> CapituloNaoEncontrado : Capítulo não existe
+        VerificandoCapitulo --> ValidandoIndices : Capítulo existe
+
+        state ValidandoIndices {
+            [*] --> VerificandoArray
+            VerificandoArray --> IndicesInvalidos : Não é array ou tamanhos diferentes
+            VerificandoArray --> VerificandoUnicos : Array válido
+            VerificandoUnicos --> IndicesDuplicados : Índices duplicados
+            VerificandoUnicos --> IndicesValidos : Índices únicos
+        }
+
+        ValidandoIndices --> PreparandoPaginas : Índices OK
+
+        state PreparandoPaginas {
+            [*] --> GerandoNomesUnicos
+            GerandoNomesUnicos --> GerandoCaminhos : UUIDs gerados
+            GerandoCaminhos --> [*] : Paths construídos
+        }
+
+        PreparandoPaginas --> SalvandoPaginas : Pronto
+    }
+}
+
+ProcessandoUpload --> ErroProcessamento : Erro na preparação
+ErroProcessamento --> [*] : Erro retornado
+
+state "Salvando no Filesystem" as SalvandoFS {
+    [*] --> EscrevendoArquivos
+
+    state EscrevendoArquivos {
+        [*] --> CriandoDiretorios
+        CriandoDiretorios --> EscrevendoBytes : Diretórios criados
+        EscrevendoBytes --> [*] : Arquivos escritos
+    }
+
+    EscrevendoArquivos --> ArquivosSalvos : Sucesso
+    EscrevendoArquivos --> ErroEscrita : Falha I/O
+}
+
+UploadCapa --> SalvandoFS : Salvando capa
+UploadPaginas --> SalvandoFS : Salvando páginas
+
+SalvandoFS --> RegistrandoBanco : Arquivos no FS
+
+state RegistrandoBanco {
+    [*] --> IniciandoTransacao
+    IniciandoTransacao --> BEGIN_TRANSACTION
+
+    state "Inserindo Metadados" as InserindoMeta {
+        [*] --> TipoInsercao
+
+        state TipoInsercao <<choice>>
+        TipoInsercao --> InserindoCapa : Tipo = Capa
+        TipoInsercao --> InserindoPaginas : Tipo = Páginas
+
+        state InserindoCapa {
+            [*] --> InsertCover
+            InsertCover : INSERT INTO covers
+            InsertCover : (bookId, url, title, selected)
+            InsertCover --> [*] : Cover inserido
+        }
+
+        state InserindoPaginas {
+            [*] --> InsertPages
+            InsertPages : INSERT INTO pages (em lote)
+            InsertPages : (chapterId, index, path)
+            InsertPages --> [*] : Pages inseridas
+        }
+    }
+
+    BEGIN_TRANSACTION --> InserindoMeta
+    InserindoMeta --> COMMIT_TRANSACTION : Sucesso
+    InserindoMeta --> ROLLBACK_TRANSACTION : Erro
+
+    COMMIT_TRANSACTION --> TransacaoCommitada
+    ROLLBACK_TRANSACTION --> TransacaoRevertida
+}
+
+RegistrandoBanco --> Sucesso : Transação commitada
+RegistrandoBanco --> ErroTransacao : Rollback
+
+state Sucesso {
+    [*] --> ArquivoPersistido
+    ArquivoPersistido : Arquivo no filesystem
+    ArquivoPersistido : Metadados no banco
+    ArquivoPersistido : Cache invalidado
+    ArquivoPersistido --> RetornoSucesso : 201 Created
+}
+
+Sucesso --> [*] : Upload concluído
+
+state ErroTransacao {
+    [*] --> RevertendoArquivos
+
+    state RevertendoArquivos {
+        [*] --> DeletandoArquivosFS
+        DeletandoArquivosFS : Remover arquivos escritos
+        DeletandoArquivosFS : Cleanup do filesystem
+        DeletandoArquivosFS --> [*] : Arquivos removidos
+    }
+
+    RevertendoArquivos --> ErroFinal : 500 Internal Server Error
+}
+
+ErroTransacao --> [*] : Erro retornado
+
+note right of ValidandoArquivo
+    Validações:
+    - Tipo MIME (image/*)
+    - Tamanho (max 10MB)
+    - Quantidade (10 capas, 100 páginas)
+    - Formato do arquivo
+end note
+
+note right of SalvandoFS
+    Filesystem:
+    - Diretórios criados automaticamente
+    - Nomes únicos (UUID)
+    - Path estruturado (tipo/id/arquivo)
+    - Permissões adequadas
+end note
+
+note bottom of RegistrandoBanco
+    Transação garante:
+    - Consistência filesystem ↔ banco
+    - Rollback em caso de erro
+    - Atomicidade da operação
+    - Cleanup automático em falhas
+end note
+
+note right of Sucesso
+    Resultado:
+    - HTTP 201 Created
+    - Objeto criado retornado
+    - Cache relacionado invalidado
+    - Arquivo acessível via URL
+end note
+
+@enduml

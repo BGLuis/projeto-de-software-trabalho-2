@@ -1,0 +1,102 @@
+@startuml Estado - Sessão de Usuário
+
+title Diagrama de Estados - Sessão de Usuário
+
+[*] --> Anônimo : Acessa sistema
+
+state Anônimo {
+    [*] --> Navegando
+    Navegando : Pode visualizar conteúdo público
+    Navegando : Pode buscar livros
+    Navegando : Pode ler capítulos
+}
+
+Anônimo --> Registrando : Clicar em "Criar Conta"
+Anônimo --> Autenticando : Clicar em "Login"
+
+state Registrando {
+    [*] --> PreenchendoDados
+    PreenchendoDados --> ValidandoDados : Submeter formulário
+    ValidandoDados --> ErroValidacao : Dados inválidos
+    ErroValidacao --> PreenchendoDados : Corrigir
+    ValidandoDados --> CriandoConta : Dados válidos
+    CriandoConta --> ContaCriada : Sucesso
+    CriandoConta --> ErroRegistro : Email já existe
+    ErroRegistro --> PreenchendoDados : Tentar novamente
+}
+
+state Autenticando {
+    [*] --> InformandoCredenciais
+    InformandoCredenciais --> VerificandoCredenciais : Submeter
+    VerificandoCredenciais --> ErroLogin : Credenciais inválidas
+    ErroLogin --> InformandoCredenciais : Tentar novamente
+    VerificandoCredenciais --> GerandoTokens : Credenciais válidas
+    GerandoTokens --> AutenticadoComSucesso : Tokens criados
+}
+
+Registrando --> Autenticando : Conta criada\nFazer login
+ContaCriada --> Autenticando : Redirecionar para login
+
+Autenticando --> Autenticado : Login bem-sucedido
+
+state Autenticado {
+    [*] --> Ativo
+
+    state Ativo {
+        [*] --> Navegando
+        Navegando --> LendoConteudo : Acessar capítulo
+        LendoConteudo --> Navegando : Voltar
+        Navegando --> GerenciandoPerfil : Editar perfil
+        GerenciandoPerfil --> Navegando : Salvar
+        Navegando --> GerenciandoColecoes : Acessar coleções
+        GerenciandoColecoes --> Navegando : Voltar
+
+        state GerenciandoColecoes {
+            [*] --> VisualizandoColecoes
+            VisualizandoColecoes --> CriandoColecao : Nova coleção
+            CriandoColecao --> VisualizandoColecoes : Criar
+            VisualizandoColecoes --> EditandoColecao : Selecionar coleção
+            EditandoColecao --> AdicionandoLivros : Adicionar livros
+            EditandoColecao --> RemovendoLivros : Remover livros
+            AdicionandoLivros --> EditandoColecao : Salvo
+            RemovendoLivros --> EditandoColecao : Removido
+            EditandoColecao --> VisualizandoColecoes : Voltar
+        }
+    }
+
+    Ativo --> TokenExpirado : Access token expirado
+    TokenExpirado --> RenovandoToken : Refresh automático
+    RenovandoToken --> Ativo : Novo token gerado
+    RenovandoToken --> SessaoExpirada : Refresh token inválido
+}
+
+Autenticado --> FazendoLogout : Clicar em "Logout"
+
+state FazendoLogout {
+    [*] --> InvalidandoToken
+    InvalidandoToken --> TokenInvalidado : Token removido do servidor
+}
+
+FazendoLogout --> Anônimo : Logout concluído
+Autenticado --> Anônimo : Logout de todas sessões
+Autenticado --> Anônimo : Sessão expirada
+
+note right of Autenticado
+    Usuário autenticado tem acesso a:
+    - Todas funcionalidades públicas
+    - Marcar capítulos como lidos
+    - Criar e gerenciar coleções
+    - Editar seu perfil
+    - Preferências de conteúdo sensível
+end note
+
+note right of Anônimo
+    Acesso limitado a:
+    - Consultar livros
+    - Ler capítulos públicos
+    - Visualizar metadados
+    - Criar conta
+    - Fazer login
+end note
+
+@enduml

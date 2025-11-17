@@ -1,0 +1,251 @@
+@startuml Diagrama de Componentes
+
+title Diagrama de Componentes - Sistema Gatuno
+
+' Estilos
+skinparam componentStyle rectangle
+skinparam linetype ortho
+
+' ==================== CAMADA DE APRESENTAÇÃO ====================
+
+package "Frontend (Angular)" {
+
+    component [App Component] as AppComp
+
+    package "Core Modules" {
+        component [Auth Module] as AuthModFront
+        component [Layout Module] as LayoutMod
+        component [Routing Module] as RoutingMod
+    }
+
+    package "Feature Modules" {
+        component [Books Module] as BooksModFront
+        component [Chapters Module] as ChaptersModFront
+        component [Collections Module] as CollectionsModFront
+        component [Admin Module] as AdminModFront
+        component [User Profile Module] as ProfileModFront
+    }
+
+    package "Shared Modules" {
+        component [HTTP Interceptors] as Interceptors
+        component [Guards] as GuardsFront
+        component [Services] as ServicesFront
+        component [Pipes & Directives] as PipesDir
+    }
+
+    AppComp --> AuthModFront
+    AppComp --> LayoutMod
+    AppComp --> RoutingMod
+    RoutingMod --> BooksModFront
+    RoutingMod --> ChaptersModFront
+    RoutingMod --> CollectionsModFront
+    RoutingMod --> AdminModFront
+    RoutingMod --> ProfileModFront
+
+    AuthModFront ..> Interceptors
+    GuardsFront ..> ServicesFront
+}
+
+' ==================== CAMADA DE API ====================
+
+package "Backend API (NestJS)" {
+
+    component [App Module] as AppMod
+
+    package "Authentication & Authorization" {
+        component [Auth Module] as AuthMod
+        component [JWT Strategy] as JWTStrategy
+        component [Guards] as GuardsBack
+        component [Encryption Module] as EncryptionMod
+    }
+
+    package "Business Modules" {
+        component [Books Module] as BooksMod
+        component [BooksController] as BooksCtrl
+        component [AdminBooksController] as AdminBooksCtrl
+        component [BooksService] as BooksServ
+
+        component [Users Module] as UsersMod
+        component [UsersController] as UsersCtrl
+        component [UsersService] as UsersServ
+        component [CollectionsBooksController] as CollBooksCtrl
+        component [CollectionsBooksService] as CollBooksServ
+
+        component [Scraping Module] as ScrapingMod
+        component [WebsiteController] as WebsiteCtrl
+        component [ScrapingService] as ScrapingServ
+        component [ChapterScrapingService] as ChapterScrapServ
+
+        BooksMod ..> BooksCtrl
+        BooksMod ..> AdminBooksCtrl
+        BooksMod ..> BooksServ
+
+        UsersMod ..> UsersCtrl
+        UsersMod ..> UsersServ
+        UsersMod ..> CollBooksCtrl
+        UsersMod ..> CollBooksServ
+
+        ScrapingMod ..> WebsiteCtrl
+        ScrapingMod ..> ScrapingServ
+        ScrapingMod ..> ChapterScrapServ
+    }
+
+    package "Support Modules" {
+        component [Files Module] as FilesMod
+        component [Logging Module] as LoggingMod
+        component [Metrics Module] as MetricsMod
+        component [Health Module] as HealthMod
+        component [Common Module] as CommonMod
+        component [App Config Module] as AppConfigMod
+    }
+
+    package "Infrastructure" {
+        component [Database Module] as DatabaseMod
+        component [Cache Manager] as CacheMgr
+        component [Queue Manager] as QueueMgr
+    }
+
+    AppMod --> AuthMod
+    AppMod --> BooksMod
+    AppMod --> UsersMod
+    AppMod --> ScrapingMod
+    AppMod --> FilesMod
+    AppMod --> LoggingMod
+    AppMod --> MetricsMod
+    AppMod --> HealthMod
+    AppMod --> CommonMod
+    AppMod --> AppConfigMod
+    AppMod --> DatabaseMod
+
+    AuthMod --> JWTStrategy
+    AuthMod --> GuardsBack
+    AuthMod --> EncryptionMod
+
+    BooksMod --> DatabaseMod
+    BooksMod --> CacheMgr
+    BooksMod --> FilesMod
+    BooksMod --> QueueMgr
+
+    UsersMod --> DatabaseMod
+    UsersMod --> AuthMod
+
+    ScrapingMod --> DatabaseMod
+    ScrapingMod --> QueueMgr
+
+    LoggingMod --> CommonMod
+    MetricsMod --> CommonMod
+}
+
+' ==================== CAMADA DE DADOS ====================
+
+package "Data Layer" {
+
+    database "MySQL Master" as DBMaster
+    component [Books Table] as BooksTable
+    component [Chapters Table] as ChaptersTable
+    component [Users Table] as UsersTable
+
+    database "MySQL Slave 1" as DBSlave1
+    database "MySQL Slave 2" as DBSlave2
+
+    database "Redis Cache" as RedisCache
+    component [Session Cache] as SessionCache
+    component [Query Cache] as QueryCache
+    component [Rate Limiting] as RateLimitCache
+
+    folder "File Storage" as FileStorage
+    component [Cover Images] as CoverImages
+    component [Page Images] as PageImages
+
+    DBMaster ..> BooksTable
+    DBMaster ..> ChaptersTable
+    DBMaster ..> UsersTable
+
+    RedisCache ..> SessionCache
+    RedisCache ..> QueryCache
+    RedisCache ..> RateLimitCache
+
+    FileStorage ..> CoverImages
+    FileStorage ..> PageImages
+
+    DBMaster -[#blue]-> DBSlave1 : Replication
+    DBMaster -[#blue]-> DBSlave2 : Replication
+}
+
+' ==================== SERVIÇOS EXTERNOS ====================
+
+package "External Services" {
+    component [Selenium Hub] as SeleniumHub
+    component [Node Docker 1] as NodeDocker1
+    component [Node Docker 2] as NodeDocker2
+
+    component [Prometheus] as Prometheus
+    component [Grafana] as Grafana
+    component [AlertManager] as AlertManager
+
+    SeleniumHub ..> NodeDocker1
+    SeleniumHub ..> NodeDocker2
+}
+
+' ==================== CONEXÕES FRONTEND <-> BACKEND ====================
+
+Interceptors --> BooksCtrl : HTTP/REST
+Interceptors --> UsersCtrl : HTTP/REST
+Interceptors --> CollBooksCtrl : HTTP/REST
+Interceptors --> AdminBooksCtrl : HTTP/REST (Admin)
+
+ServicesFront --> Interceptors : Uses
+
+' ==================== CONEXÕES BACKEND <-> DATA ====================
+
+DatabaseMod --> DBMaster : Write Operations
+DatabaseMod --> DBSlave1 : Read Operations
+DatabaseMod --> DBSlave2 : Read Operations
+
+CacheMgr --> RedisCache : Cache Operations
+FilesMod --> FileStorage : File I/O
+
+ScrapingServ --> SeleniumHub : Web Scraping
+
+' ==================== OBSERVABILIDADE ====================
+
+MetricsMod --> Prometheus : Metrics Export
+Prometheus --> Grafana : Data Source
+Prometheus --> AlertManager : Alerts
+LoggingMod ..> Grafana : Logs (optional)
+
+' ==================== NOTAS ====================
+
+note right of "Frontend (Angular)"
+    Framework: Angular 18+
+    Server-Side Rendering (SSR)
+    TypeScript
+    RxJS
+    Angular Material
+end note
+
+note right of "Backend API (NestJS)"
+    Framework: NestJS
+    TypeScript
+    TypeORM
+    JWT Authentication
+    Rate Limiting (Throttler)
+    Cache Strategy
+    Soft Delete Pattern
+end note
+
+note right of "Data Layer"
+    MySQL 8.0
+    Master-Slave Replication
+    Redis 8.0 for Cache
+    Filesystem for Images
+end note
+
+note right of "External Services"
+    Selenium Grid for Scraping
+    Prometheus for Metrics
+    Grafana for Visualization
+    AlertManager for Notifications
+end note
+
+@enduml

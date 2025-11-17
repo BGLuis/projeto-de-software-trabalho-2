@@ -1,0 +1,157 @@
+@startuml Estado - Coleção de Livros
+
+title Diagrama de Estados - Coleção de Livros do Usuário
+
+[*] --> Criando : Usuário cria coleção
+
+state Criando {
+    [*] --> InformandoTitulo
+    InformandoTitulo --> ValidandoTitulo : Submeter
+    ValidandoTitulo --> ErroValidacao : Título vazio
+    ErroValidacao --> InformandoTitulo : Corrigir
+    ValidandoTitulo --> SalvandoColecao : Título válido
+    SalvandoColecao --> ColecaoCriada : Salvo no banco
+}
+
+Criando --> Vazia : Coleção criada
+
+state Vazia {
+    [*] --> SemLivros
+    SemLivros : 0 livros
+    SemLivros : Aguardando conteúdo
+}
+
+Vazia --> AdicionandoLivros : Adicionar livros
+
+state AdicionandoLivros {
+    [*] --> SelecionandoLivros
+    SelecionandoLivros --> ValidandoLivros : Confirmar
+    ValidandoLivros --> ErroLivroInexistente : Livro não encontrado
+    ErroLivroInexistente --> SelecionandoLivros : Selecionar outro
+    ValidandoLivros --> VerificandoPropriedade : Livros existem
+    VerificandoPropriedade --> ErroPermissao : Coleção de outro usuário
+    VerificandoPropriedade --> InserindoRelacionamentos : Coleção do usuário
+
+    state InserindoRelacionamentos {
+        [*] --> InserindoEmLote
+        InserindoEmLote : INSERT INTO collection_book_books
+        InserindoEmLote : Para cada livro selecionado
+        InserindoEmLote --> [*] : Transação commitada
+    }
+
+    InserindoRelacionamentos --> LivrosAdicionados : Sucesso
+}
+
+AdicionandoLivros --> ComLivros : Livros adicionados
+
+state ComLivros {
+    [*] --> Ativa
+
+    state Ativa {
+        [*] --> VisualizandoLista
+        VisualizandoLista : Mostra livros da coleção
+        VisualizandoLista : Usuário pode navegar
+        VisualizandoLista --> AcessandoLivro : Selecionar livro
+        AcessandoLivro --> VisualizandoLista : Voltar
+    }
+
+    Ativa --> AdicionandoMaisLivros : Adicionar mais livros
+
+    state AdicionandoMaisLivros {
+        [*] --> SelecionandoNovos
+        SelecionandoNovos --> VerificandoDuplicatas : Confirmar
+        VerificandoDuplicatas --> LivroJaExiste : Livro já na coleção
+        LivroJaExiste --> SelecionandoNovos : Selecionar outro
+        VerificandoDuplicatas --> InserindoNovos : Livro novo
+        InserindoNovos --> [*] : Inseridos
+    }
+
+    AdicionandoMaisLivros --> Ativa : Livros adicionados
+
+    Ativa --> RemovendoLivro : Remover livro
+
+    state RemovendoLivro {
+        [*] --> SelecionandoRemocao
+        SelecionandoRemocao --> ConfirmandoRemocao : Confirmar
+        ConfirmandoRemocao --> VerificandoPropriedadeRemocao : Aceitar
+        VerificandoPropriedadeRemocao --> ErroPermissaoRemocao : Coleção de outro
+        VerificandoPropriedadeRemocao --> DeletandoRelacionamento : Coleção do usuário
+        DeletandoRelacionamento --> LivroRemovido : DELETE FROM collection_book_books
+    }
+
+    RemovendoLivro --> Ativa : Livro removido\nAinda tem livros
+    RemovendoLivro --> Vazia : Último livro removido
+}
+
+ComLivros --> EditandoTitulo : Editar nome da coleção
+
+state EditandoTitulo {
+    [*] --> AlterandoTitulo
+    AlterandoTitulo --> ValidandoNovoTitulo : Salvar
+    ValidandoNovoTitulo --> ErroTitulo : Título inválido
+    ErroTitulo --> AlterandoTitulo : Corrigir
+    ValidandoNovoTitulo --> AtualizandoTitulo : Título válido
+    AtualizandoTitulo --> TituloAtualizado : UPDATE collection_book
+}
+
+EditandoTitulo --> ComLivros : Título atualizado
+
+Vazia --> EditandoTitulo : Editar nome
+EditandoTitulo --> Vazia : Título atualizado
+
+ComLivros --> Excluindo : Excluir coleção
+Vazia --> Excluindo : Excluir coleção
+
+state Excluindo {
+    [*] --> ConfirmandoExclusao
+    ConfirmandoExclusao --> VerificandoPropriedadeExclusao : Confirmar
+    VerificandoPropriedadeExclusao --> ErroPermissaoExclusao : Coleção de outro
+    VerificandoPropriedadeExclusao --> DeletandoRelacionamentosLivros : Coleção do usuário
+
+    state DeletandoRelacionamentosLivros {
+        [*] --> RemovemRelacionamentos
+        RemovemRelacionamentos : DELETE FROM collection_book_books
+        RemovemRelacionamentos --> [*] : Relacionamentos removidos
+    }
+
+    DeletandoRelacionamentosLivros --> DeletandoColecao : Relacionamentos limpos
+    DeletandoColecao --> ColecaoExcluida : DELETE FROM collection_book
+}
+
+Excluindo --> [*] : Coleção excluída
+
+note right of Vazia
+    Coleção vazia:
+    - Criada mas sem livros
+    - Pode adicionar livros
+    - Pode editar título
+    - Pode ser excluída
+end note
+
+note right of ComLivros
+    Coleção ativa:
+    - Contém um ou mais livros
+    - Usuário pode visualizar
+    - Pode adicionar mais livros
+    - Pode remover livros
+    - Pode editar título
+    - Pode ser excluída
+end note
+
+note bottom of AdicionandoLivros
+    Validações:
+    - Livros devem existir
+    - Coleção deve pertencer ao usuário
+    - Transação garante consistência
+    - Múltiplos livros em uma operação
+end note
+
+note bottom of Excluindo
+    Exclusão em cascata:
+    1. Remove relacionamentos (collection_book_books)
+    2. Remove coleção (collection_book)
+    3. Livros permanecem intactos
+    4. Hard delete (não é soft delete)
+end note
+
+@enduml

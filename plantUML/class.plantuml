@@ -1,0 +1,565 @@
+@startuml Diagrama de Classes
+
+' Configurações
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam groupInheritance 2
+
+' ==================== ENTIDADES ====================
+
+package "Entidades" {
+
+    class User {
+        - id: UUID
+        - userName: string
+        - name: string
+        - email: string
+        - password: string
+        - maxWeightSensitiveContent: number
+        - createdAt: Date
+        - updatedAt: Date
+        --
+        + roles: Role[]
+    }
+
+    class Role {
+        - id: UUID
+        - name: string
+        - maxWeightSensitiveContent: number
+    }
+
+    class Book {
+        - id: UUID
+        - title: string
+        - alternativeTitle: string[]
+        - type: BookType
+        - originalUrl: string[]
+        - description: string
+        - publication: number
+        - scrapingStatus: ScrapingStatus
+        - createdAt: Date
+        - updatedAt: Date
+        - deletedAt: Date
+        --
+        + chapters: Chapter[]
+        + covers: Cover[]
+        + tags: Tag[]
+        + authors: Author[]
+        + sensitiveContent: SensitiveContent[]
+    }
+
+    class Author {
+        - id: UUID
+        - name: string
+        - biography: string
+        - createdAt: Date
+        - updatedAt: Date
+        --
+        + books: Book[]
+    }
+
+    class Chapter {
+        - id: UUID
+        - title: string
+        - originalUrl: string
+        - index: number
+        - scrapingStatus: ScrapingStatus
+        - retries: number
+        - deletedAt: Date
+        --
+        + book: Book
+        + pages: Page[]
+    }
+
+    class Page {
+        - id: number
+        - index: number
+        - path: string
+        - deletedAt: Date
+        --
+        + chapter: Chapter
+    }
+
+    class Cover {
+        - id: UUID
+        - url: string
+        - title: string
+        - selected: boolean
+        - deletedAt: Date
+        --
+        + book: Book
+    }
+
+    class Tag {
+        - id: UUID
+        - name: string
+        - altNames: string[]
+        - description: string
+    }
+
+    class SensitiveContent {
+        - id: UUID
+        - name: string
+        - altNames: string[]
+        - weight: number
+    }
+
+    class ChapterRead {
+        - id: number
+        - readAt: Date
+        --
+        + user: User
+        + chapter: Chapter
+    }
+
+    class CollectionBook {
+        - id: UUID
+        - title: string
+        - createdAt: Date
+        - updatedAt: Date
+        --
+        + user: User
+        + books: Book[]
+    }
+
+    class Website {
+        - id: UUID
+        - url: string
+        - preScript: string
+        - posScript: string
+        - selector: string
+        - ignoreFiles: string[]
+        - concurrencyLimit: number
+        - createdAt: Date
+        - updatedAt: Date
+    }
+
+    enum BookType {
+        BOOK
+        MANGA
+        COMIC
+    }
+
+    enum ScrapingStatus {
+        READY
+        PROCESS
+        DONE
+        ERROR
+    }
+}
+
+' ==================== CONTROLLERS ====================
+
+package "Controllers" {
+
+    class AuthController {
+        - authService: AuthService
+        --
+        + signUp(body: SignUpAuthDto)
+        + signIn(body: SignInAuthDto)
+        + refreshTokens(user: CurrentUserDto, req)
+        + logout(user: CurrentUserDto, req)
+        + logoutAll(user: CurrentUserDto)
+    }
+
+    class UsersController {
+        - usersService: UsersService
+        --
+        + updateUser(dto: UpdateUserDto, user: CurrentUserDto)
+    }
+
+    class BooksController {
+        - booksService: BooksService
+        --
+        + getAllBooks(pageOptions: BookPageOptionsDto, user?)
+        + getRandomBook(options: BookPageOptionsDto, user?)
+        + checkBookTitle(title: string, alternativeTitles?)
+        + getBook(id: string, user?)
+        + getBookChapters(id: string, user?)
+        + getBookCovers(id: string, user?)
+        + getBookInfos(id: string, user?)
+    }
+
+    class AdminBooksController {
+        - booksService: BooksService
+        - bookUploadService: BookUploadService
+        - chapterManagementService: ChapterManagementService
+        - bookDeletionService: BookDeletionService
+        --
+        + createBook(dto: CreateBookDto)
+        + updateBook(id: string, dto: UpdateBookDto)
+        + fixBook(idBook: string)
+        + verifyBook(idBook: string)
+        + resetBook(idBook: string)
+        + updateChapter(idBook: string, dto: UpdateChapterDto[])
+        + orderChapters(idBook: string, dto: OrderChaptersDto[])
+        + dashboard()
+        + processBookDashboard()
+        + selectCover(idBook: string, idCover: string)
+        + uploadCover(idBook: string, file, dto: UploadCoverDto)
+        + uploadMultipleCovers(idBook: string, files)
+        + createManualChapter(idBook: string, dto: CreateChapterManualDto)
+        + uploadChapterPages(idChapter: string, files, indices: number[])
+        + deleteBook(idBook: string)
+        + deleteBooksInBatch(bookIds: string[])
+        + deleteChapter(idChapter: string)
+        + deleteChaptersInBatch(chapterIds: string[])
+        + deleteCover(idBook: string, idCover: string)
+        + deleteCoversInBatch(coverIds: string[])
+        + deletePages(idChapter: string, pageIndices: number[])
+        + listDeletedBooks()
+        + listDeletedChapters()
+        + listDeletedCovers()
+        + listDeletedPages()
+    }
+
+    class ChapterController {
+        - chapterService: ChapterService
+        --
+        + getChapter(idChapter: string, user?)
+        + resetChapter(idChapter: string)
+        + resetAllChapters(body: string[])
+        + markChapterAsRead(idChapter: string, user: CurrentUserDto)
+        + getChaptersWithLessPages(pages: number)
+    }
+
+    class CollectionsBooksController {
+        - collectionsBooksService: CollectionsBooksService
+        --
+        + getCollectionBooks(user: CurrentUserDto)
+        + getNameCollectionBooks(user: CurrentUserDto)
+        + getCollectionById(idCollection: string, user: CurrentUserDto)
+        + createCollectionBook(dto: CreateCollectionBookDto, user: CurrentUserDto)
+        + addBookToCollection(dto: AddBookCollectionDto, idCollection: string, user: CurrentUserDto)
+        + removeBookFromCollection(idCollection: string, idBook: string, user: CurrentUserDto)
+        + deleteCollection(idCollection: string, user: CurrentUserDto)
+    }
+
+    class TagsController {
+        - tagsService: TagsService
+        --
+        + getAll(options: TagsOptions, user?)
+        + mergeTags(tagId: string, dto: string[])
+    }
+
+    class AuthorsController {
+        - authorsService: AuthorsService
+        --
+        + getAll(options: AuthorsOptions, user?)
+        + mergeAuthors(authorId: string, dto: string[])
+    }
+
+    class SensitiveContentController {
+        - sensitiveContentService: SensitiveContentService
+        --
+        + getAll(user?)
+        + getOne(id: string)
+        + create(dto: CreateSensitiveContentDto)
+        + update(id: string, dto: UpdateSensitiveContentDto)
+        + remove(id: string)
+        + mergeSensitiveContent(contentId: string, dto: string[])
+    }
+
+    class WebsiteController {
+        - websiteService: WebsiteService
+        --
+        + registerWebsite(dto: RegisterWebSiteDto)
+    }
+}
+
+' ==================== SERVICES ====================
+
+package "Services" {
+
+    class AuthService {
+        - usersService: UsersService
+        - jwtService: JwtService
+        - passwordEncryption: PasswordEncryptionProvider
+        --
+        + signUp(email: string, password: string): User
+        + signIn(email: string, password: string): Tokens
+        + refreshTokens(userId: string, refreshToken: string): Tokens
+        + logout(userId: string, refreshToken: string): void
+        + logoutAll(userId: string): void
+    }
+
+    class UsersService {
+        - userRepository: Repository<User>
+        - roleRepository: Repository<Role>
+        --
+        + createUser(email: string, password: string): User
+        + findByEmail(email: string): User
+        + updateUser(dto: UpdateUserDto, userId: string): User
+    }
+
+    class BooksService {
+        - bookRepository: Repository<Book>
+        - bookQueryService: BookQueryService
+        - bookCreationService: BookCreationService
+        - bookUpdateService: BookUpdateService
+        - bookRelationshipService: BookRelationshipService
+        --
+        + getAllBooks(pageOptions, maxWeight?): PageDto<Book>
+        + getRandomBook(options, maxWeight?): Book
+        + getOne(id: string, maxWeight?): Book
+        + getChapters(id: string, userId?, maxWeight?): Chapter[]
+        + getCovers(id: string, maxWeight?): Cover[]
+        + getInfos(id: string, maxWeight?): BookInfo
+        + createBook(dto: CreateBookDto): Book
+        + updateBook(id: string, dto: UpdateBookDto): Book
+        + updateChapter(idBook: string, dto: UpdateChapterDto[]): void
+        + orderChapters(idBook: string, dto: OrderChaptersDto[]): void
+        + checkBookTitleConflict(title: string, altTitles?): ConflictResult
+        + fixBook(idBook: string): void
+        + verifyBook(idBook: string): VerifyResult
+        + resetBook(idBook: string): void
+        + selectCover(idBook: string, idCover: string): void
+        + getDashboardOverview(): DashboardData
+        + getProcessBook(): ProcessData
+    }
+
+    class BookUploadService {
+        - bookRepository: Repository<Book>
+        - coverRepository: Repository<Cover>
+        - chapterRepository: Repository<Chapter>
+        - pageRepository: Repository<Page>
+        - filesService: FilesService
+        --
+        + uploadCover(idBook: string, file, title?): Cover
+        + uploadMultipleCovers(idBook: string, files): Cover[]
+        + uploadChapterPages(idChapter: string, files, indices: number[]): Page[]
+    }
+
+    class ChapterManagementService {
+        - chapterRepository: Repository<Chapter>
+        - bookRepository: Repository<Book>
+        --
+        + createManualChapter(idBook: string, dto: CreateChapterManualDto): Chapter
+    }
+
+    class BookDeletionService {
+        - bookRepository: Repository<Book>
+        - chapterRepository: Repository<Chapter>
+        - coverRepository: Repository<Cover>
+        - pageRepository: Repository<Page>
+        --
+        + deleteBook(idBook: string): void
+        + deleteBooks(bookIds: string[]): void
+        + deleteChapter(idChapter: string): void
+        + deleteChapters(chapterIds: string[]): void
+        + deleteCover(idCover: string): void
+        + deleteCovers(coverIds: string[]): void
+        + deletePages(idChapter: string, pageIndices: number[]): void
+        + listDeletedBooks(): Book[]
+        + listDeletedChapters(): Chapter[]
+        + listDeletedCovers(): Cover[]
+        + listDeletedPages(): Page[]
+    }
+
+    class ChapterService {
+        - chapterRepository: Repository<Chapter>
+        - chapterReadRepository: Repository<ChapterRead>
+        --
+        + getChapter(idChapter: string, userId?): Chapter
+        + resetChapter(idChapter: string): void
+        + resetAllChapters(chapterIds: string[]): void
+        + markChapterAsRead(idChapter: string, userId: string): ChapterRead
+        + listLessPages(pages: number): Chapter[]
+    }
+
+    class CollectionsBooksService {
+        - collectionRepository: Repository<CollectionBook>
+        - bookRepository: Repository<Book>
+        --
+        + getCollections(userId: string): CollectionBook[]
+        + getNameCollectionBooks(userId: string): string[]
+        + getCollectionBooks(userId: string, idCollection: string): CollectionBook
+        + createCollectionBook(dto: CreateCollectionBookDto, userId: string): CollectionBook
+        + addBookToCollection(dto: AddBookCollectionDto, idCollection: string, userId: string): void
+        + removeBookFromCollection(idCollection: string, idBook: string, userId: string): void
+        + deleteCollection(idCollection: string, userId: string): void
+    }
+
+    class TagsService {
+        - tagRepository: Repository<Tag>
+        --
+        + get(options: TagsOptions, maxWeight?): PageDto<Tag>
+        + mergeTags(tagId: string, tagIds: string[]): void
+    }
+
+    class AuthorsService {
+        - authorRepository: Repository<Author>
+        --
+        + getAll(options: AuthorsOptions, maxWeight?): PageDto<Author>
+        + mergeAuthors(authorId: string, authorIds: string[]): void
+    }
+
+    class SensitiveContentService {
+        - sensitiveContentRepository: Repository<SensitiveContent>
+        --
+        + getAll(maxWeight?): SensitiveContent[]
+        + getOne(id: string): SensitiveContent
+        + create(dto: CreateSensitiveContentDto): SensitiveContent
+        + update(id: string, dto: UpdateSensitiveContentDto): SensitiveContent
+        + remove(id: string): void
+        + mergeSensitiveContent(contentId: string, contentIds: string[]): void
+    }
+
+    class WebsiteService {
+        - websiteRepository: Repository<Website>
+        --
+        + registerWebsite(dto: RegisterWebSiteDto): Website
+    }
+
+    class FilesService {
+        --
+        + saveFile(file: Buffer, path: string): string
+        + deleteFile(path: string): void
+        + getFile(path: string): Buffer
+    }
+}
+
+' ==================== DTOs ====================
+
+package "DTOs" {
+
+    class SignUpAuthDto {
+        + email: string
+        + password: string
+    }
+
+    class SignInAuthDto {
+        + email: string
+        + password: string
+    }
+
+    class CurrentUserDto {
+        + userId: string
+        + email: string
+        + roles: string[]
+        + maxWeightSensitiveContent: number
+    }
+
+    class CreateBookDto {
+        + title: string
+        + alternativeTitle: string[]
+        + type: BookType
+        + originalUrl: string[]
+        + description: string
+        + publication: number
+        + tags: string[]
+        + authors: string[]
+        + sensitiveContent: string[]
+    }
+
+    class UpdateBookDto {
+        + title?: string
+        + alternativeTitle?: string[]
+        + type?: BookType
+        + description?: string
+        + publication?: number
+    }
+
+    class CreateChapterManualDto {
+        + title: string
+        + index: number
+    }
+
+    class UpdateChapterDto {
+        + id: string
+        + title?: string
+        + index?: number
+    }
+
+    class OrderChaptersDto {
+        + id: string
+        + index: number
+    }
+
+    class CreateCollectionBookDto {
+        + title: string
+    }
+
+    class AddBookCollectionDto {
+        + bookIds: string[]
+    }
+
+    class BookPageOptionsDto {
+        + page: number
+        + limit: number
+        + search?: string
+        + type?: BookType
+        + tags?: string[]
+        + authors?: string[]
+    }
+}
+
+' ==================== RELACIONAMENTOS ====================
+
+' Entidades
+User "1" -- "*" Role : possui
+User "1" -- "*" CollectionBook : cria
+User "1" -- "*" ChapterRead : lê
+Book "1" -- "*" Chapter : contém
+Book "1" -- "*" Cover : tem
+Book "*" -- "*" Tag : categorizado por
+Book "*" -- "*" Author : escrito por
+Book "*" -- "*" SensitiveContent : possui
+Chapter "1" -- "*" Page : possui
+Chapter "1" -- "*" ChapterRead : foi lido
+CollectionBook "*" -- "*" Book : agrupa
+
+' Controllers -> Services
+AuthController --> AuthService : usa
+UsersController --> UsersService : usa
+BooksController --> BooksService : usa
+AdminBooksController --> BooksService : usa
+AdminBooksController --> BookUploadService : usa
+AdminBooksController --> ChapterManagementService : usa
+AdminBooksController --> BookDeletionService : usa
+ChapterController --> ChapterService : usa
+CollectionsBooksController --> CollectionsBooksService : usa
+TagsController --> TagsService : usa
+AuthorsController --> AuthorsService : usa
+SensitiveContentController --> SensitiveContentService : usa
+WebsiteController --> WebsiteService : usa
+
+' Services -> Repositories (Entidades)
+AuthService --> UsersService : usa
+UsersService --> User : gerencia
+UsersService --> Role : gerencia
+BooksService --> Book : gerencia
+BookUploadService --> Book : gerencia
+BookUploadService --> Cover : gerencia
+BookUploadService --> Chapter : gerencia
+BookUploadService --> Page : gerencia
+BookUploadService --> FilesService : usa
+BookDeletionService --> Book : gerencia
+BookDeletionService --> Chapter : gerencia
+BookDeletionService --> Cover : gerencia
+BookDeletionService --> Page : gerencia
+ChapterManagementService --> Chapter : gerencia
+ChapterManagementService --> Book : gerencia
+ChapterService --> Chapter : gerencia
+ChapterService --> ChapterRead : gerencia
+CollectionsBooksService --> CollectionBook : gerencia
+CollectionsBooksService --> Book : gerencia
+TagsService --> Tag : gerencia
+AuthorsService --> Author : gerencia
+SensitiveContentService --> SensitiveContent : gerencia
+WebsiteService --> Website : gerencia
+
+' Controllers -> DTOs
+AuthController ..> SignUpAuthDto : usa
+AuthController ..> SignInAuthDto : usa
+AuthController ..> CurrentUserDto : usa
+BooksController ..> BookPageOptionsDto : usa
+AdminBooksController ..> CreateBookDto : usa
+AdminBooksController ..> UpdateBookDto : usa
+AdminBooksController ..> UpdateChapterDto : usa
+AdminBooksController ..> OrderChaptersDto : usa
+AdminBooksController ..> CreateChapterManualDto : usa
+CollectionsBooksController ..> CreateCollectionBookDto : usa
+CollectionsBooksController ..> AddBookCollectionDto : usa
+
+@enduml

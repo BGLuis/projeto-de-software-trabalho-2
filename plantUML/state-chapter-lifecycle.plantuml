@@ -1,0 +1,191 @@
+@startuml Estado - Ciclo de Vida do Capítulo
+
+title Diagrama de Estados - Ciclo de Vida do Capítulo
+
+[*] --> Criando : Admin cria capítulo
+
+state "Criação" as Criando {
+    [*] --> EscolhendoTipo
+    EscolhendoTipo --> CriacaoManual : Manual (sem URL)
+    EscolhendoTipo --> CriacaoScraping : Via Scraping (com URL)
+}
+
+state CriacaoManual {
+    [*] --> DefinindoIndice
+    DefinindoIndice --> CapituloManualCriado : Salvar
+    CapituloManualCriado : originalUrl = 'manual'
+    CapituloManualCriado : scrapingStatus = DONE
+}
+
+state CriacaoScraping {
+    [*] --> Ready
+    Ready : scrapingStatus = READY
+    Ready : Aguardando processamento
+    Ready --> Processando : Job de scraping inicia
+
+    state Processando {
+        [*] --> BaixandoPaginas
+        BaixandoPaginas : scrapingStatus = PROCESS
+        BaixandoPaginas : retries < max
+        BaixandoPaginas --> SalvandoPaginas : Download bem-sucedido
+        SalvandoPaginas --> [*] : Páginas salvas
+    }
+
+    Processando --> Concluido : Scraping bem-sucedido
+    Processando --> ErroTemporario : Falha no scraping
+
+    state ErroTemporario {
+        [*] --> IncrementandoRetries
+        IncrementandoRetries --> [*] : retries++
+    }
+
+    ErroTemporario --> Ready : retries < 3\nReagendar
+    ErroTemporario --> Erro : retries >= 3\nFalha permanente
+
+    state Erro {
+        [*] --> ErroRegistrado
+        ErroRegistrado : scrapingStatus = ERROR
+        ErroRegistrado : Requer intervenção manual
+    }
+
+    Erro --> Ready : Admin reseta\nretries = 0
+}
+
+CriacaoManual --> SemPaginas : Capítulo criado
+CriacaoScraping --> Concluido : Scraping concluído
+
+state Concluido {
+    [*] --> ComPaginas
+    ComPaginas : scrapingStatus = DONE
+    ComPaginas : Pronto para leitura
+}
+
+Concluido --> SemPaginas : Sem páginas baixadas
+
+state SemPaginas {
+    [*] --> AguardandoPaginas
+    AguardandoPaginas : 0 páginas
+    AguardandoPaginas : Não pode ser lido
+}
+
+SemPaginas --> UploadPaginas : Admin faz upload
+
+state UploadPaginas {
+    [*] --> ValidandoArquivos
+    ValidandoArquivos --> ValidandoIndices : Arquivos válidos
+    ValidandoIndices --> ErroUpload : Índices inválidos
+    ValidandoIndices --> SalvandoArquivos : Índices válidos
+
+    state SalvandoArquivos {
+        [*] --> EscrevendoFilesystem
+        EscrevendoFilesystem --> RegistrandoBanco : Arquivos salvos
+        RegistrandoBanco --> [*] : Transação commitada
+    }
+
+    SalvandoArquivos --> UploadConcluido : Sucesso
+}
+
+UploadPaginas --> Disponivel : Upload bem-sucedido
+
+state Disponivel {
+    [*] --> ProntoLeitura
+
+    state ProntoLeitura {
+        [*] --> NaoLido
+        NaoLido --> Lendo : Usuário acessa
+        Lendo --> Lido : Usuário marca como lido
+        Lido --> Lendo : Usuário acessa novamente
+
+        note right of Lido
+            Registro em chapters_read:
+            - userId
+            - chapterId
+            - readAt (timestamp)
+        end note
+    }
+
+    ProntoLeitura --> EmCache : Primeira leitura
+    EmCache --> ProntoLeitura : Cache expirado (600s)
+
+    ProntoLeitura --> ResetandoCache : Admin reseta
+
+    state ResetandoCache {
+        [*] --> InvalidandoCache
+        InvalidandoCache --> [*] : Cache limpo
+    }
+
+    ResetandoCache --> ProntoLeitura : Reset concluído
+}
+
+Disponivel --> Atualizando : Admin edita capítulo
+
+state Atualizando {
+    [*] --> EditandoDados
+    EditandoDados --> ValidandoAtualizacao : Submeter
+    ValidandoAtualizacao --> ErroValidacao : Dados inválidos
+    ValidandoAtualizacao --> SalvandoAtualizacao : Dados válidos
+    SalvandoAtualizacao --> InvalidandoCacheCapitulo : Atualizado
+    InvalidandoCacheCapitulo --> [*] : Cache limpo
+}
+
+Atualizando --> Disponivel : Atualização concluída
+
+Disponivel --> ExcluindoPaginas : Admin deleta páginas específicas
+
+state ExcluindoPaginas {
+    [*] --> SelecionandoPaginas
+    SelecionandoPaginas --> MarcandoPaginasExcluidas : Confirmar
+    MarcandoPaginasExcluidas --> InvalidandoCachePaginas : deletedAt = NOW()
+    InvalidandoCachePaginas --> [*] : Cache limpo
+}
+
+ExcluindoPaginas --> Disponivel : Páginas deletadas
+ExcluindoPaginas --> SemPaginas : Todas páginas deletadas
+
+Disponivel --> Deletando : Admin deleta capítulo
+
+state Deletando {
+    [*] --> MarcandoExcluido
+    MarcandoExcluido --> DeletandoPaginas : deletedAt = NOW()
+    DeletandoPaginas --> InvalidandoCacheTotal : Páginas marcadas
+    InvalidandoCacheTotal --> AgendandoLimpeza : Cache limpo
+}
+
+Deletando --> Excluido : Soft delete concluído
+
+state Excluido {
+    [*] --> AguardandoRetencao
+    AguardandoRetencao : Não visível
+    AguardandoRetencao : Páginas preservadas
+    AguardandoRetencao : Pode ser restaurado
+    AguardandoRetencao --> ProntoLimpeza : Período expirado
+}
+
+Excluido --> [*] : Job deleta arquivos físicos
+
+note right of Disponivel
+    Capítulo disponível:
+    - Visível para usuários
+    - Pode ser lido
+    - Cache de 600s
+    - Histórico de leitura registrado
+end note
+
+note right of CriacaoScraping
+    Scraping automático:
+    - Status: READY → PROCESS → DONE/ERROR
+    - Máximo 3 tentativas (retries)
+    - Falhas reagendadas automaticamente
+    - Erros permanentes requerem intervenção
+end note
+
+note bottom of UploadPaginas
+    Upload manual:
+    - Máximo 100 arquivos por vez
+    - Tamanho máximo: 10MB por arquivo
+    - Apenas imagens permitidas
+    - Índices devem ser únicos
+    - Transação garante consistência
+end note
+
+@enduml

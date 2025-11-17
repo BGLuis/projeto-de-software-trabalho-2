@@ -1,0 +1,201 @@
+@startuml Estado - Cache do Sistema
+
+title Diagrama de Estados - Sistema de Cache
+
+state "Dado Solicitado" as Solicitado {
+    [*] --> RecebeuRequisicao
+    RecebeuRequisicao : Cliente solicita recurso
+    RecebeuRequisicao : GET /books, /chapters, etc.
+}
+
+[*] --> Solicitado : Requisição recebida
+
+Solicitado --> VerificandoCache : Controller verifica cache
+
+state VerificandoCache {
+    [*] --> BuscandoChave
+    BuscandoChave : get(key)
+    BuscandoChave : Ex: "books:page1:limit20"
+    BuscandoChave --> ResultadoCache
+
+    state ResultadoCache <<choice>>
+}
+
+VerificandoCache --> CacheHit : Dado encontrado
+VerificandoCache --> CacheMiss : Dado não encontrado
+
+state CacheHit {
+    [*] --> DadoEmCache
+    DadoEmCache : Dado válido em cache
+    DadoEmCache : TTL não expirado
+    DadoEmCache --> VerificandoTTL
+
+    state VerificandoTTL <<choice>>
+    VerificandoTTL --> DadoValido : TTL > 0
+    VerificandoTTL --> CacheExpirado : TTL = 0
+}
+
+CacheHit --> RetornandoCache : Dado válido
+
+state RetornandoCache {
+    [*] --> SerializandoDado
+    SerializandoDado --> EnviandoResposta : Dado serializado
+}
+
+RetornandoCache --> [*] : 200 OK (cache)
+
+state CacheMiss {
+    [*] --> CacheVazio
+    CacheVazio : Chave não existe
+    CacheVazio : Primeira requisição
+    CacheVazio : Ou cache expirado/invalidado
+}
+
+CacheMiss --> BuscandoBanco : Buscar no banco
+CacheExpirado --> BuscandoBanco : Cache expirado
+
+state BuscandoBanco {
+    [*] --> ExecutandoQuery
+    ExecutandoQuery : SELECT FROM database
+    ExecutandoQuery : Com JOINs se necessário
+    ExecutandoQuery --> ResultadoQuery
+
+    state ResultadoQuery <<choice>>
+    ResultadoQuery --> DadosEncontrados : Rows > 0
+    ResultadoQuery --> DadosNaoEncontrados : Rows = 0
+}
+
+BuscandoBanco --> ArmazenandoCache : Dados encontrados
+
+state ArmazenandoCache {
+    [*] --> DeterminandoTTL
+
+    state DeterminandoTTL <<choice>>
+    DeterminandoTTL --> TTL_Curto : Dados do usuário\n(60-180s)
+    DeterminandoTTL --> TTL_Medio : Dados públicos\n(600-1800s)
+    DeterminandoTTL --> TTL_Longo : Metadados/Dashboard\n(3600s)
+
+    TTL_Curto --> SalvandoCache : TTL definido
+    TTL_Medio --> SalvandoCache : TTL definido
+    TTL_Longo --> SalvandoCache : TTL definido
+
+    state SalvandoCache {
+        [*] --> SerializandoParaCache
+        SerializandoParaCache --> SetCache : JSON serializado
+        SetCache : set(key, value, ttl)
+        SetCache --> [*] : Dado cacheado
+    }
+}
+
+ArmazenandoCache --> RetornandoDado : Cache atualizado
+
+state RetornandoDado {
+    [*] --> EnviandoResposta
+    EnviandoResposta : 200 OK
+}
+
+RetornandoDado --> CacheAtivo : Dado em uso
+
+BuscandoBanco --> NaoEncontrado : Dados não encontrados
+
+state NaoEncontrado {
+    [*] --> Retornando404
+    Retornando404 : 404 Not Found
+}
+
+NaoEncontrado --> [*] : Erro retornado
+
+state CacheAtivo {
+    [*] --> Monitorando
+    Monitorando : Cache válido
+    Monitorando : TTL decrementando
+    Monitorando --> AguardandoExpiracao : Esperando
+
+    AguardandoExpiracao --> TTLExpirou : TTL = 0
+    TTLExpirou --> CacheExpirado : Auto-eviction
+}
+
+CacheAtivo --> Invalidando : Evento de modificação
+
+state Invalidando {
+    [*] --> TipoInvalidacao
+
+    state TipoInvalidacao <<choice>>
+    TipoInvalidacao --> InvalidacaoEspecifica : Chave específica
+    TipoInvalidacao --> InvalidacaoPattern : Pattern (wildcards)
+    TipoInvalidacao --> InvalidacaoTotal : Flush all
+
+    state InvalidacaoEspecifica {
+        [*] --> DeletandoChave
+        DeletandoChave : delete(key)
+        DeletandoChave : Ex: "book:123"
+        DeletandoChave --> [*] : Chave removida
+    }
+
+    state InvalidacaoPattern {
+        [*] --> BuscandoChaves
+        BuscandoChaves : keys("pattern*")
+        BuscandoChaves : Ex: "chapters:book123:*"
+        BuscandoChaves --> DeletandoMultiplas : Chaves encontradas
+
+        state DeletandoMultiplas {
+            [*] --> DeletandoEmLote
+            DeletandoEmLote : delete(keys[])
+            DeletandoEmLote --> [*] : Chaves removidas
+        }
+    }
+
+    state InvalidacaoTotal {
+        [*] --> FlushAll
+        FlushAll : flushall()
+        FlushAll : Limpa todo cache
+        FlushAll --> [*] : Cache vazio
+    }
+}
+
+Invalidando --> CacheInvalidado : Invalidação concluída
+
+state CacheInvalidado {
+    [*] --> CacheLimpo
+    CacheLimpo : Chaves removidas
+    CacheLimpo : Próxima requisição = cache miss
+}
+
+CacheInvalidado --> [*] : Cache limpo
+
+note right of VerificandoCache
+    Estratégia de Cache:
+    - Cache-first
+    - TTL configurável por tipo
+    - Invalidação sob demanda
+    - Suporte a patterns
+end note
+
+note right of ArmazenandoCache
+    TTLs padrão:
+    - Livros: 180s (lista), 1800s (detalhes)
+    - Capítulos: 600s
+    - Tags/Autores: 1800s
+    - Dashboard: 3600s
+    - Conteúdo sensível: 3600s
+end note
+
+note bottom of Invalidando
+    Eventos que invalidam cache:
+    - Criar/Atualizar/Deletar livro
+    - Criar/Atualizar/Deletar capítulo
+    - Upload de capas/páginas
+    - Atualizar metadados
+    - Mesclar tags/autores
+    - Reset manual (admin)
+end note
+
+note right of CacheHit
+    Cache Hit:
+    - Resposta rápida
+    - Sem consulta ao banco
+    - Reduz carga do servidor
+    - Melhora performance
+end note
+
+@enduml

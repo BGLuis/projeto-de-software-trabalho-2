@@ -1,0 +1,129 @@
+@startuml Estado - Ciclo de Vida do Livro
+
+title Diagrama de Estados - Ciclo de Vida do Livro
+
+[*] --> Criando : Admin cria livro
+
+state Criando {
+    [*] --> PreenchendoDados
+    PreenchendoDados --> ValidandoTitulo : Submeter
+    ValidandoTitulo --> TituloConflitante : Título duplicado
+    TituloConflitante --> PreenchendoDados : Alterar título
+    ValidandoTitulo --> CriandoRelacionamentos : Título único
+
+    state CriandoRelacionamentos {
+        [*] --> ProcessandoAutores
+        ProcessandoAutores --> ProcessandoTags : Autores vinculados
+        ProcessandoTags --> ProcessandoSensitiveContent : Tags vinculadas
+        ProcessandoSensitiveContent --> [*] : Conteúdo sensível vinculado
+    }
+
+    CriandoRelacionamentos --> LivroCriado : Transação commitada
+}
+
+Criando --> Ativo : Livro criado com sucesso
+
+state Ativo {
+    [*] --> SemCapas
+
+    SemCapas --> ComCapas : Upload de capa
+    ComCapas --> ComCapas : Upload de mais capas
+    ComCapas --> SelecionandoCapa : Selecionar capa principal
+    SelecionandoCapa --> ComCapas : Capa selecionada
+
+    state "Gerenciamento de Capítulos" as GerenciandoCapitulos {
+        [*] --> SemCapitulos
+        SemCapitulos --> ComCapitulos : Criar capítulo
+        ComCapitulos --> ComCapitulos : Adicionar capítulo
+        ComCapitulos --> ReordenandoCapitulos : Reordenar
+        ReordenandoCapitulos --> ComCapitulos : Ordem atualizada
+        ComCapitulos --> AtualizandoCapitulos : Editar capítulos
+        AtualizandoCapitulos --> ComCapitulos : Atualizados
+    }
+
+    SemCapas --> GerenciandoCapitulos
+    ComCapas --> GerenciandoCapitulos
+
+    GerenciandoCapitulos --> Publicado : Pronto para leitura
+
+    state Publicado {
+        [*] --> Disponivel
+        Disponivel : Visível para usuários
+        Disponivel : Pode ser lido
+        Disponivel : Aparece em buscas
+    }
+
+    Publicado --> EmManutencao : Admin inicia manutenção
+
+    state EmManutencao {
+        [*] --> Verificando
+        Verificando --> CorrigindoErros : Erros encontrados
+        CorrigindoErros --> Verificando : Aplicar correções
+        Verificando --> ResetandoCache : Sem erros
+        ResetandoCache --> [*] : Cache limpo
+    }
+
+    EmManutencao --> Publicado : Manutenção concluída
+
+    Publicado --> AtualizandoMetadados : Editar informações
+
+    state AtualizandoMetadados {
+        [*] --> EditandoDados
+        EditandoDados --> SalvandoAlteracoes : Submeter
+        SalvandoAlteracoes --> InvalidandoCache : Dados salvos
+        InvalidandoCache --> [*] : Cache invalidado
+    }
+
+    AtualizandoMetadados --> Publicado : Atualização concluída
+}
+
+Ativo --> Deletando : Admin deleta livro (soft delete)
+
+state Deletando {
+    [*] --> MarcandoComoExcluido
+    MarcandoComoExcluido --> ExcluindoCapitulos : deletedAt = NOW()
+    ExcluindoCapitulos --> ExcluindoCapas : Capítulos marcados
+    ExcluindoCapas --> ExcluindoPaginas : Capas marcadas
+    ExcluindoPaginas --> InvalidandoCacheLivro : Páginas marcadas
+    InvalidandoCacheLivro --> AgendandoLimpeza : Cache limpo
+}
+
+Deletando --> Excluido : Soft delete concluído
+
+state Excluido {
+    [*] --> AguardandoRetencao
+    AguardandoRetencao : Dados preservados temporariamente
+    AguardandoRetencao : Não visível em buscas
+    AguardandoRetencao : Pode ser restaurado
+    AguardandoRetencao --> ProntoParaLimpeza : Período de retenção expirado
+}
+
+Excluido --> [*] : Job de limpeza\ndeleta arquivos físicos
+
+note right of Ativo
+    Estados principais do livro:
+    - Gerenciamento de capas
+    - Gerenciamento de capítulos
+    - Publicação
+    - Manutenção
+    - Atualização de metadados
+end note
+
+note right of Excluido
+    Soft delete:
+    - deletedAt registrado
+    - Arquivos preservados
+    - Não aparece em consultas
+    - Job agendado para limpeza física
+end note
+
+note bottom of GerenciandoCapitulos
+    Capítulos podem ser:
+    - Criados manualmente
+    - Obtidos via scraping
+    - Reordenados
+    - Atualizados
+    - Deletados (soft delete)
+end note
+
+@enduml

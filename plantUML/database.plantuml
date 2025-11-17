@@ -1,0 +1,210 @@
+@startuml Diagrama Entidade-Relacionamento
+
+' Configurações visuais
+skinparam linetype ortho
+skinparam roundcorner 10
+skinparam shadowing false
+
+' Entidade: users
+entity "users" as users {
+  * id : UUID <<PK>>
+  --
+  * userName : VARCHAR
+  name : VARCHAR
+  * email : VARCHAR <<UNIQUE>>
+  * password : VARCHAR
+  * maxWeightSensitiveContent : INT
+  * createdAt : TIMESTAMP
+  * updatedAt : TIMESTAMP
+}
+
+' Entidade: roles
+entity "roles" as roles {
+  * id : UUID <<PK>>
+  --
+  * name : VARCHAR <<UNIQUE>>
+  * maxWeightSensitiveContent : INT
+}
+
+' Entidade: books
+entity "books" as books {
+  * id : UUID <<PK>>
+  --
+  * title : VARCHAR(500)
+  alternativeTitle : JSON
+  * type : ENUM(BookType)
+  originalUrl : JSON
+  description : TEXT
+  publication : INT
+  * scrapingStatus : ENUM(ScrapingStatus)
+  * createdAt : TIMESTAMP
+  * updatedAt : TIMESTAMP
+  deletedAt : TIMESTAMP
+}
+
+' Entidade: authors
+entity "authors" as authors {
+  * id : UUID <<PK>>
+  --
+  * name : VARCHAR
+  biography : TEXT
+  * createdAt : TIMESTAMP
+  * updatedAt : TIMESTAMP
+}
+
+' Entidade: chapters
+entity "chapters" as chapters {
+  * id : UUID <<PK>>
+  --
+  title : VARCHAR
+  * originalUrl : VARCHAR
+  * index : DECIMAL(15,3)
+  * scrapingStatus : ENUM(ScrapingStatus)
+  * retries : INT
+  bookId : UUID <<FK>>
+  deletedAt : TIMESTAMP
+}
+
+' Entidade: pages
+entity "pages" as pages {
+  * id : INT <<PK>>
+  --
+  * index : INT
+  * path : VARCHAR
+  chapterId : UUID <<FK>>
+  deletedAt : TIMESTAMP
+}
+
+' Entidade: covers
+entity "covers" as covers {
+  * id : UUID <<PK>>
+  --
+  * url : VARCHAR
+  * title : VARCHAR
+  * selected : BOOLEAN
+  bookId : UUID <<FK>>
+  deletedAt : TIMESTAMP
+}
+
+' Entidade: tags
+entity "tags" as tags {
+  * id : UUID <<PK>>
+  --
+  * name : VARCHAR <<UNIQUE>>
+  altNames : JSON
+  description : TEXT
+}
+
+' Entidade: sensitive_content
+entity "sensitive_content" as sensitive_content {
+  * id : UUID <<PK>>
+  --
+  * name : VARCHAR <<UNIQUE>>
+  altNames : JSON
+  * weight : INT
+}
+
+' Entidade: chapters_read
+entity "chapters_read" as chapters_read {
+  * id : INT <<PK>>
+  --
+  userId : UUID <<FK>>
+  chapterId : UUID <<FK>>
+  * readAt : TIMESTAMP
+}
+
+' Entidade: collection_book
+entity "collection_book" as collection_book {
+  * id : UUID <<PK>>
+  --
+  * title : VARCHAR
+  userId : UUID <<FK>>
+  * createdAt : TIMESTAMP
+  * updatedAt : TIMESTAMP
+}
+
+' Entidade: websites
+entity "websites" as websites {
+  * id : UUID <<PK>>
+  --
+  * url : VARCHAR
+  preScript : TEXT
+  posScript : TEXT
+  * selector : TEXT
+  ignoreFiles : JSON
+  concurrencyLimit : INT
+  * createdAt : TIMESTAMP
+  * updatedAt : TIMESTAMP
+}
+
+' Tabela intermediária: users_roles (ManyToMany)
+entity "users_roles" as users_roles {
+  * userId : UUID <<FK>>
+  * roleId : UUID <<FK>>
+}
+
+' Tabela intermediária: books_authors (ManyToMany)
+entity "books_authors" as books_authors {
+  * bookId : UUID <<FK>>
+  * authorId : UUID <<FK>>
+}
+
+' Tabela intermediária: books_tags (ManyToMany)
+entity "books_tags" as books_tags {
+  * bookId : UUID <<FK>>
+  * tagId : UUID <<FK>>
+}
+
+' Tabela intermediária: books_sensitive_content (ManyToMany)
+entity "books_sensitive_content" as books_sensitive_content {
+  * bookId : UUID <<FK>>
+  * sensitiveContentId : UUID <<FK>>
+}
+
+' Tabela intermediária: collection_book_books (ManyToMany)
+entity "collection_book_books" as collection_book_books {
+  * collectionBookId : UUID <<FK>>
+  * bookId : UUID <<FK>>
+}
+
+' Relacionamentos
+
+' User <-> Role (ManyToMany)
+users ||--o{ users_roles
+users_roles }o--|| roles
+
+' Book <-> Author (ManyToMany)
+books ||--o{ books_authors
+books_authors }o--|| authors
+
+' Book <-> Tag (ManyToMany)
+books ||--o{ books_tags
+books_tags }o--|| tags
+
+' Book <-> SensitiveContent (ManyToMany)
+books ||--o{ books_sensitive_content
+books_sensitive_content }o--|| sensitive_content
+
+' Book -> Chapter (OneToMany)
+books ||--o{ chapters : "possui"
+
+' Chapter -> Page (OneToMany)
+chapters ||--o{ pages : "contém"
+
+' Book -> Cover (OneToMany)
+books ||--o{ covers : "tem"
+
+' User -> ChapterRead (OneToMany)
+users ||--o{ chapters_read : "leu"
+
+' Chapter -> ChapterRead (OneToMany)
+chapters ||--o{ chapters_read : "foi lido por"
+
+' User -> CollectionBook (OneToMany)
+users ||--o{ collection_book : "criou"
+
+' CollectionBook <-> Book (ManyToMany)
+collection_book ||--o{ collection_book_books
+collection_book_books }o--|| books
+
+@enduml

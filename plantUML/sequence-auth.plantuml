@@ -1,0 +1,196 @@
+@startuml Sequência - Autenticação
+
+title Diagrama de Sequência - Casos de Uso de Autenticação
+
+' ===== UC-01: Criar Conta =====
+actor "Usuário\nAnônimo" as User1
+participant "AuthController" as AuthCtrl1
+participant "AuthService" as AuthSvc1
+participant "UsersService" as UserSvc1
+participant "PasswordEncryption" as PwdEnc1
+database "Database" as DB1
+
+== UC-01: Criar Conta ==
+
+User1 -> AuthCtrl1: POST /auth/signup\n{email, password}
+activate AuthCtrl1
+
+AuthCtrl1 -> AuthSvc1: signUp(email, password)
+activate AuthSvc1
+
+AuthSvc1 -> UserSvc1: findByEmail(email)
+activate UserSvc1
+UserSvc1 -> DB1: SELECT FROM users WHERE email
+activate DB1
+DB1 --> UserSvc1: null (não existe)
+deactivate DB1
+deactivate UserSvc1
+
+AuthSvc1 -> PwdEnc1: hashPassword(password)
+activate PwdEnc1
+PwdEnc1 --> AuthSvc1: hashedPassword
+deactivate PwdEnc1
+
+AuthSvc1 -> UserSvc1: createUser(email, hashedPassword)
+activate UserSvc1
+UserSvc1 -> DB1: INSERT INTO users
+activate DB1
+DB1 --> UserSvc1: user
+deactivate DB1
+
+UserSvc1 -> DB1: SELECT roles (default)
+activate DB1
+DB1 --> UserSvc1: roles[]
+deactivate DB1
+
+UserSvc1 --> AuthSvc1: user with roles
+deactivate UserSvc1
+
+AuthSvc1 --> AuthCtrl1: user
+deactivate AuthSvc1
+
+AuthCtrl1 --> User1: 201 Created\n{id, email, roles}
+deactivate AuthCtrl1
+
+|||
+
+' ===== UC-02: Fazer Login =====
+actor "Usuário\nAnônimo" as User2
+participant "AuthController" as AuthCtrl2
+participant "AuthService" as AuthSvc2
+participant "UsersService" as UserSvc2
+participant "PasswordEncryption" as PwdEnc2
+participant "JwtService" as JWT2
+database "Database" as DB2
+
+== UC-02: Fazer Login ==
+
+User2 -> AuthCtrl2: POST /auth/signin\n{email, password}
+activate AuthCtrl2
+
+AuthCtrl2 -> AuthSvc2: signIn(email, password)
+activate AuthSvc2
+
+AuthSvc2 -> UserSvc2: findByEmail(email)
+activate UserSvc2
+UserSvc2 -> DB2: SELECT FROM users WHERE email\n(with password)
+activate DB2
+DB2 --> UserSvc2: user
+deactivate DB2
+deactivate UserSvc2
+
+AuthSvc2 -> PwdEnc2: comparePassword(password, user.password)
+activate PwdEnc2
+PwdEnc2 --> AuthSvc2: true
+deactivate PwdEnc2
+
+AuthSvc2 -> JWT2: generateAccessToken(user)
+activate JWT2
+JWT2 --> AuthSvc2: accessToken
+deactivate JWT2
+
+AuthSvc2 -> JWT2: generateRefreshToken(user)
+activate JWT2
+JWT2 --> AuthSvc2: refreshToken
+deactivate JWT2
+
+AuthSvc2 -> DB2: SAVE refreshToken hash
+activate DB2
+DB2 --> AuthSvc2: saved
+deactivate DB2
+
+AuthSvc2 --> AuthCtrl2: {accessToken, refreshToken}
+deactivate AuthSvc2
+
+AuthCtrl2 --> User2: 200 OK\n{accessToken, refreshToken}
+deactivate AuthCtrl2
+
+|||
+
+' ===== UC-03: Atualizar Token =====
+actor "Usuário\nAutenticado" as User3
+participant "AuthController" as AuthCtrl3
+participant "RefreshTokenGuard" as Guard3
+participant "AuthService" as AuthSvc3
+participant "JwtService" as JWT3
+database "Database" as DB3
+
+== UC-03: Atualizar Token ==
+
+User3 -> AuthCtrl3: GET /auth/refresh\nAuthorization: Bearer {refreshToken}
+activate AuthCtrl3
+
+AuthCtrl3 -> Guard3: validate(refreshToken)
+activate Guard3
+Guard3 -> JWT3: verifyRefreshToken(refreshToken)
+activate JWT3
+JWT3 --> Guard3: payload {userId, email}
+deactivate JWT3
+Guard3 --> AuthCtrl3: currentUser
+deactivate Guard3
+
+AuthCtrl3 -> AuthSvc3: refreshTokens(userId, refreshToken)
+activate AuthSvc3
+
+AuthSvc3 -> DB3: SELECT refreshToken hash
+activate DB3
+DB3 --> AuthSvc3: storedHash
+deactivate DB3
+
+AuthSvc3 -> AuthSvc3: compare(refreshToken, storedHash)
+
+AuthSvc3 -> JWT3: generateAccessToken(user)
+activate JWT3
+JWT3 --> AuthSvc3: newAccessToken
+deactivate JWT3
+
+AuthSvc3 -> JWT3: generateRefreshToken(user)
+activate JWT3
+JWT3 --> AuthSvc3: newRefreshToken
+deactivate JWT3
+
+AuthSvc3 -> DB3: UPDATE refreshToken hash
+activate DB3
+DB3 --> AuthSvc3: updated
+deactivate DB3
+
+AuthSvc3 --> AuthCtrl3: {accessToken, refreshToken}
+deactivate AuthSvc3
+
+AuthCtrl3 --> User3: 200 OK\n{accessToken, refreshToken}
+deactivate AuthCtrl3
+
+|||
+
+' ===== UC-04: Fazer Logout =====
+actor "Usuário\nAutenticado" as User4
+participant "AuthController" as AuthCtrl4
+participant "JwtAuthGuard" as Guard4
+participant "AuthService" as AuthSvc4
+database "Database" as DB4
+
+== UC-04: Fazer Logout ==
+
+User4 -> AuthCtrl4: GET /auth/logout\nAuthorization: Bearer {token}
+activate AuthCtrl4
+
+AuthCtrl4 -> Guard4: validate(token)
+activate Guard4
+Guard4 --> AuthCtrl4: currentUser
+deactivate Guard4
+
+AuthCtrl4 -> AuthSvc4: logout(userId, refreshToken)
+activate AuthSvc4
+
+AuthSvc4 -> DB4: DELETE refreshToken
+activate DB4
+DB4 --> AuthSvc4: deleted
+deactivate DB4
+
+AuthSvc4 --> AuthCtrl4: success
+deactivate AuthSvc4
+
+AuthCtrl4 --> User4: 200 OK\n{message: "Logged out"}
+deactivate AuthCtrl4
+
+@enduml

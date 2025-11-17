@@ -1,0 +1,52 @@
+@startuml C4 Container Diagram
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Diagrama de Containers (C4 Level 2) - Sistema Gatuno
+
+Person(usuario, "Usuário", "Usuário do sistema (anônimo, autenticado ou admin)")
+
+System_Boundary(gatuno, "Sistema Gatuno") {
+    Container(web_app, "Aplicação Web", "Angular 18+, TypeScript", "SPA com SSR que fornece toda funcionalidade aos usuários")
+    Container(api, "API Backend", "NestJS, TypeScript", "Fornece API REST para funcionalidades de negócio e autenticação JWT")
+    Container(scraping, "Serviço de Scraping", "Selenium Grid, Python", "Realiza scraping de websites de mangás em background")
+
+    ContainerDb(db_master, "Database Master", "MySQL 8.0", "Armazena dados principais (livros, usuários, capítulos)")
+    ContainerDb(db_slave1, "Database Slave 1", "MySQL 8.0", "Réplica read-only para balanceamento de leitura")
+    ContainerDb(db_slave2, "Database Slave 2", "MySQL 8.0", "Réplica read-only para balanceamento de leitura")
+
+    ContainerDb(cache, "Cache & Sessions", "Redis 8.0", "Cache de queries, sessões JWT e rate limiting")
+    Container(file_storage, "File Storage", "Filesystem/Volume", "Armazena capas e páginas de mangás")
+}
+
+System_Ext(websites, "Websites de Mangás", "Fontes externas de conteúdo")
+
+Container_Boundary(monitoring_stack, "Stack de Monitoramento") {
+    Container(prometheus, "Prometheus", "Metrics DB", "Coleta e armazena métricas da aplicação")
+    Container(grafana, "Grafana", "Dashboard", "Visualização de métricas e logs")
+    Container(alertmanager, "AlertManager", "Alerting", "Gerencia e envia alertas")
+}
+
+Rel(usuario, web_app, "Usa", "HTTPS")
+Rel(web_app, api, "Faz chamadas API", "HTTPS/REST JSON")
+
+Rel(api, db_master, "Lê/Escreve dados", "MySQL Protocol")
+Rel(api, db_slave1, "Lê dados", "MySQL Protocol")
+Rel(api, db_slave2, "Lê dados", "MySQL Protocol")
+Rel(api, cache, "Lê/Escreve cache e sessões", "Redis Protocol")
+Rel(api, file_storage, "Lê/Escreve arquivos", "File I/O")
+
+Rel(db_master, db_slave1, "Replicação assíncrona", "Binlog")
+Rel(db_master, db_slave2, "Replicação assíncrona", "Binlog")
+
+Rel(api, scraping, "Enfileira jobs de scraping", "HTTP/Queue")
+Rel(scraping, websites, "Extrai conteúdo", "HTTPS/Selenium")
+Rel(scraping, db_master, "Salva capítulos/páginas", "MySQL Protocol")
+Rel(scraping, file_storage, "Salva imagens", "File I/O")
+
+Rel(api, prometheus, "Exporta métricas", "/metrics endpoint")
+Rel(prometheus, grafana, "Fornece dados", "PromQL")
+Rel(prometheus, alertmanager, "Envia alertas", "HTTP")
+
+@enduml

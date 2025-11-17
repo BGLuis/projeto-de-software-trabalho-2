@@ -1,0 +1,385 @@
+@startuml Diagrama de Implantação - Produção
+
+title Diagrama de Implantação - Ambiente de Produção
+
+' ==================== INFRAESTRUTURA DE PRODUÇÃO ====================
+
+node "Production Server (Host)" as ProdHost {
+
+    ' Docker Engine
+    component [Docker Engine] as DockerEngine
+
+    ' Volumes persistentes
+    database "Docker Volumes" as Volumes {
+        artifact "database-data" as DBData
+        artifact "database-slave-1-data" as Slave1Data
+        artifact "database-slave-2-data" as Slave2Data
+        artifact "redis_data" as RedisData
+        artifact "selenium-data" as SeleniumData
+        artifact "api-data" as APIData
+        artifact "traefik-certs" as TraefikCerts
+    }
+
+    ' Arquivo de configuração
+    folder "Configuration" as Config {
+        artifact ".env" as EnvFile
+        artifact "traefik.yml" as TraefikConfig
+    }
+}
+
+' ==================== REDE EXTERNA (TRAEFIK) ====================
+
+cloud "Docker Network\ntraefik_traefik-proxy-net" as TraefikNetwork {
+
+    ' ==================== REVERSE PROXY ====================
+
+    node "Container: traefik" as TraefikContainer {
+        component [Traefik v3.2] as Traefik
+        component [HTTP: 80] as HTTP80
+        component [HTTPS: 443] as HTTPS443
+        component [Dashboard: 8080] as Dashboard
+
+        note right of Traefik
+            Image: traefik:v3.2
+            Network: traefik-proxy-net (external)
+            Volume: /var/run/docker.sock
+            Volume: traefik-certs → /letsencrypt
+
+            Features:
+            - Let's Encrypt (ACME)
+            - HTTP → HTTPS redirect
+            - Load balancing
+            - Dynamic configuration
+            - Docker provider
+        end note
+    }
+}
+
+' ==================== REDE INTERNA (APLICAÇÃO) ====================
+
+cloud "Docker Network\ngatuno_default" as DockerNet {
+
+    ' ==================== FRONTEND ====================
+
+    node "Container: gatuno-app" as AppContainer {
+        component [Angular App] as AngularApp
+        component [NGINX Server] as NGINXServer
+        component [Port: 80] as AppPort
+        component [SSR Enabled] as SSR
+
+        note right of AngularApp
+            Image: gatuno-app (prod)
+            Dockerfile: Dockerfile.prod
+            Multi-stage build
+            Optimized bundle
+
+            Traefik Labels:
+            - Host: ${GATUNO_HOST_APP}
+            - entryPoints: websecure
+            - tls.certresolver: letsencrypt
+        end note
+    }
+
+    ' ==================== BACKEND API ====================
+
+    node "Container: gatuno-api" as APIContainer {
+        component [NestJS API] as NestJSAPI
+        component [Node.js Server] as NodeServer
+        component [Port: 3000] as APIPort3000
+        component [PM2 Process Manager] as PM2
+
+        note right of NestJSAPI
+            Image: gatuno-api (prod)
+            Dockerfile: Dockerfile.prod
+            Multi-stage build
+            Volume: api-data → /usr/src/app/data
+
+            Traefik Labels:
+            - Host: ${GATUNO_HOST_API}
+            - entryPoints: websecure
+            - tls.certresolver: letsencrypt
+            - PathPrefix: /api
+
+            Environment:
+            - NODE_ENV=production
+            - Throttling enabled
+            - Caching enabled
+        end note
+    }
+
+    ' ==================== BANCO DE DADOS ====================
+
+    node "Container: gatuno-database (Master)" as DBMasterContainer {
+        database "MySQL 8.0\nMaster" as MySQLMaster
+        component [Port: 3306] as DBPort
+        component [Server ID: 1] as ServerID1
+        component [Binary Logging] as BinLog
+
+        note right of MySQLMaster
+            Volume: database-data → /var/lib/mysql
+            Volume: ./database/master/my.cnf
+
+            Configuration:
+            - InnoDB buffer pool
+            - Binary logging enabled
+            - GTID replication
+            - Backup: Automated daily
+
+            Security:
+            - Internal network only
+            - Strong password required
+            - Limited connections
+        end note
+    }
+
+    node "Container: gatuno-database-slave-1" as DBSlave1Container {
+        database "MySQL 8.0\nSlave 1" as MySQLSlave1
+        component [Port: 3306] as DBPort1
+        component [Server ID: 2] as ServerID2
+        component [Read-Only] as ReadOnly1
+
+        note right of MySQLSlave1
+            Volume: database-slave-1-data
+            Purpose: Load balancing reads
+            Replication lag monitoring
+        end note
+    }
+
+    node "Container: gatuno-database-slave-2" as DBSlave2Container {
+        database "MySQL 8.0\nSlave 2" as MySQLSlave2
+        component [Port: 3306] as DBPort2
+        component [Server ID: 3] as ServerID3
+        component [Read-Only] as ReadOnly2
+
+        note right of MySQLSlave2
+            Volume: database-slave-2-data
+            Purpose: Load balancing reads
+            Failover candidate
+        end note
+    }
+
+    ' ==================== CACHE ====================
+
+    node "Container: gatuno-redis" as RedisContainer {
+        database "Redis 8.0" as Redis
+        component [Port: 6379] as RedisPort
+        component [Password Auth] as RedisAuth
+        component [Persistence: AOF] as Persistence
+
+        note right of Redis
+            Image: redis:8.0-alpine
+            Volume: redis_data → /data
+
+            Configuration:
+            - AOF persistence enabled
+            - Password required
+            - maxmemory-policy: allkeys-lru
+            - Backup: Automated
+
+            Usage:
+            - Session store
+            - Query cache
+            - Rate limiting
+        end note
+    }
+
+    ' ==================== SCRAPING ====================
+
+    node "Container: selenium-hub" as SeleniumHubContainer {
+        component [Selenium Hub] as SeleniumHub
+        component [Event Bus: 4442] as HubPort1
+        component [Event Bus: 4443] as HubPort2
+        component [HTTP: 4444] as HubPort3
+
+        note right of SeleniumHub
+            Image: selenium/hub:latest
+
+            Configuration:
+            - Session timeout: 300s
+            - Max sessions: configured
+            - Health check enabled
+        end note
+    }
+
+    node "Container: node-docker" as NodeDockerContainer {
+        component [Node Docker] as NodeDocker
+        component [Chrome Containers] as ChromeContainers
+        component [Max Sessions: 4] as MaxSessions
+        component [Resource Limits] as ResourceLimits
+
+        note right of NodeDocker
+            Image: selenium/node-docker:latest
+            shm_size: 5gb
+            Volume: /var/run/docker.sock
+            Volume: selenium-data
+
+            Resources:
+            - CPU limits configured
+            - Memory limits configured
+            - Automatic cleanup
+        end note
+    }
+}
+
+' ==================== REDE DE MONITORAMENTO ====================
+
+cloud "Docker Network\nmonitoring" as MonitoringNet {
+
+    ' ==================== MONITORAMENTO ====================
+
+    node "Container: prometheus" as PrometheusContainer {
+        component [Prometheus] as Prometheus
+        component [Port: 9090] as PromPort
+        component [Metrics Collection] as MetricsCol
+
+        note right of Prometheus
+            Image: prom/prometheus
+            Volume: prometheus.yml
+            Volume: prometheus-data
+
+            Targets:
+            - api:3000/metrics
+            - redis:6379
+            - database:3306
+
+            Traefik Labels:
+            - Host: ${PROMETHEUS_HOST}
+            - BasicAuth enabled
+        end note
+    }
+
+    node "Container: grafana" as GrafanaContainer {
+        component [Grafana] as Grafana
+        component [Port: 3001] as GrafanaPort
+        component [Dashboards] as Dashboards
+
+        note right of Grafana
+            Image: grafana/grafana
+            Volume: grafana-data
+
+            Data Sources:
+            - Prometheus
+            - MySQL
+
+            Traefik Labels:
+            - Host: ${GRAFANA_HOST}
+            - TLS enabled
+        end note
+    }
+
+    node "Container: alertmanager" as AlertManagerContainer {
+        component [AlertManager] as AlertManager
+        component [Port: 9093] as AlertPort
+        component [Notifications] as Notifications
+
+        note right of AlertManager
+            Image: prom/alertmanager
+            Volume: alertmanager.yml
+
+            Integrations:
+            - Email
+            - Slack
+            - PagerDuty (optional)
+        end note
+    }
+}
+
+' ==================== CONEXÕES PRODUÇÃO ====================
+
+' Internet -> Traefik
+actor "Internet Users" as Users
+Users -[#blue]-> TraefikContainer : "HTTPS :443"
+
+' Traefik -> Aplicação
+TraefikContainer -[#blue]-> AppContainer : "Load Balance\n:80\n${GATUNO_HOST_APP}"
+TraefikContainer -[#blue]-> APIContainer : "Load Balance\n:3000\n${GATUNO_HOST_API}/api"
+
+' Frontend <-> Backend
+AppContainer -[#green]-> APIContainer : "Internal HTTP\n:3000"
+
+' Backend <-> Databases (Master-Slave)
+APIContainer -[#green]-> DBMasterContainer : "Write Operations\n:3306"
+APIContainer -[#green]-> DBSlave1Container : "Read Operations\n:3306"
+APIContainer -[#green]-> DBSlave2Container : "Read Operations\n:3306"
+
+' Database Replication
+DBMasterContainer -[#red]-> DBSlave1Container : "GTID Replication\nBinlog"
+DBMasterContainer -[#red]-> DBSlave2Container : "GTID Replication\nBinlog"
+
+' Backend <-> Cache
+APIContainer -[#orange]-> RedisContainer : "Cache & Sessions\n:6379"
+
+' Backend <-> Scraping
+APIContainer -[#purple]-> SeleniumHubContainer : "Web Scraping\n:4444"
+SeleniumHubContainer -[#purple]-> NodeDockerContainer : "Event Bus\n:4442/4443"
+
+' Monitoramento
+PrometheusContainer -[#brown]-> APIContainer : "Metrics\n/metrics"
+PrometheusContainer -[#brown]-> RedisContainer : "Metrics"
+PrometheusContainer -[#brown]-> DBMasterContainer : "Metrics"
+GrafanaContainer -[#brown]-> PrometheusContainer : "Query\n:9090"
+AlertManagerContainer -[#brown]-> PrometheusContainer : "Alerts"
+
+' Traefik -> Monitoramento
+actor "Admin" as Admin
+Admin -[#gray]-> TraefikContainer : "HTTPS\nDashboard"
+TraefikContainer -[#gray]-> PrometheusContainer : "${PROMETHEUS_HOST}"
+TraefikContainer -[#gray]-> GrafanaContainer : "${GRAFANA_HOST}"
+
+' Volumes
+APIContainer ..[#brown]> APIData : "mount"
+DBMasterContainer ..[#brown]> DBData : "mount"
+DBSlave1Container ..[#brown]> Slave1Data : "mount"
+DBSlave2Container ..[#brown]> Slave2Data : "mount"
+RedisContainer ..[#brown]> RedisData : "mount"
+NodeDockerContainer ..[#brown]> SeleniumData : "mount"
+TraefikContainer ..[#brown]> TraefikCerts : "mount"
+
+' ==================== NOTAS ADICIONAIS ====================
+
+note bottom of DockerNet
+    **docker-compose.prod.yml**
+
+    Características do ambiente de produção:
+    - Build otimizado (multi-stage Dockerfile)
+    - TLS/SSL via Let's Encrypt
+    - Reverse proxy com Traefik
+    - Monitoramento com Prometheus + Grafana
+    - Alertas configurados (AlertManager)
+    - Backup automatizado
+    - Replication Master-Slave (MySQL)
+    - Cache distribuído (Redis)
+    - Rate limiting habilitado
+    - Health checks configurados
+    - Restart policy: unless-stopped
+    - Resource limits definidos
+    - Security headers (Traefik middleware)
+
+    Networks:
+    - traefik-proxy-net (external) - Internet facing
+    - gatuno_default (internal) - Application
+    - monitoring (internal) - Observability
+
+    Domínios (configuráveis via .env):
+    - ${GATUNO_HOST_APP} - Frontend
+    - ${GATUNO_HOST_API} - Backend API
+    - ${PROMETHEUS_HOST} - Prometheus
+    - ${GRAFANA_HOST} - Grafana
+end note
+
+note bottom of TraefikNetwork
+    **Traefik Middleware & Security**
+
+    - HTTP → HTTPS redirect automático
+    - Let's Encrypt ACME challenge (HTTP-01)
+    - TLS 1.2+ enforced
+    - Security headers:
+      * X-Frame-Options: DENY
+      * X-Content-Type-Options: nosniff
+      * Strict-Transport-Security
+    - Rate limiting por IP
+    - Load balancing algorithms
+    - Circuit breaker pattern
+end note
+
+@enduml

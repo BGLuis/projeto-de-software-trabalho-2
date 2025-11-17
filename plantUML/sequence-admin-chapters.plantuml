@@ -1,0 +1,319 @@
+@startuml Sequência - Administração de Capítulos e Páginas
+
+title Diagrama de Sequência - Administração de Capítulos e Páginas (Admin)
+
+' ===== UC-33: Atualizar Capítulos =====
+actor "Administrador" as Admin1
+participant "AdminBooksController" as Ctrl1
+participant "JwtAuthGuard\n+ RoleGuard" as Guard1
+participant "BooksService" as Svc1
+database "Database" as DB1
+participant "Cache" as Cache1
+
+== UC-33: Atualizar Capítulos ==
+
+Admin1 -> Ctrl1: PATCH /books/{idBook}/chapters\n[{id, title, index}, ...]\nAuthorization: Bearer {adminToken}
+activate Ctrl1
+
+Ctrl1 -> Guard1: validate(token, role=ADMIN)
+activate Guard1
+Guard1 --> Ctrl1: currentUser (admin)
+deactivate Guard1
+
+Ctrl1 -> Svc1: updateChapter(idBook, dto[])
+activate Svc1
+
+Svc1 -> DB1: SELECT FROM books WHERE id = idBook
+activate DB1
+DB1 --> Svc1: book
+deactivate DB1
+
+Svc1 -> DB1: BEGIN TRANSACTION
+activate DB1
+
+loop Para cada chapter update
+    Svc1 -> DB1: UPDATE chapters\nSET title = ?, index = ?\nWHERE id = ? AND bookId = idBook
+    DB1 --> Svc1: updated
+end
+
+Svc1 -> DB1: COMMIT TRANSACTION
+DB1 --> Svc1: committed
+deactivate DB1
+
+Svc1 -> Cache1: invalidate("chapters:{idBook}:*")
+activate Cache1
+Cache1 --> Svc1: cleared
+deactivate Cache1
+
+Svc1 --> Ctrl1: success
+deactivate Svc1
+
+Ctrl1 --> Admin1: 200 OK\n{message: "Chapters updated"}
+deactivate Ctrl1
+
+|||
+
+' ===== UC-34: Reordenar Capítulos =====
+actor "Administrador" as Admin2
+participant "AdminBooksController" as Ctrl2
+participant "JwtAuthGuard\n+ RoleGuard" as Guard2
+participant "BooksService" as Svc2
+database "Database" as DB2
+participant "Cache" as Cache2
+
+== UC-34: Reordenar Capítulos ==
+
+Admin2 -> Ctrl2: PATCH /books/{idBook}/chapters/order\n[{id, index}, ...]\nAuthorization: Bearer {adminToken}
+activate Ctrl2
+
+Ctrl2 -> Guard2: validate(token, role=ADMIN)
+activate Guard2
+Guard2 --> Ctrl2: currentUser (admin)
+deactivate Guard2
+
+Ctrl2 -> Svc2: orderChapters(idBook, dto[])
+activate Svc2
+
+Svc2 -> DB2: BEGIN TRANSACTION
+activate DB2
+
+loop Para cada chapter
+    Svc2 -> DB2: UPDATE chapters\nSET index = ?\nWHERE id = ? AND bookId = idBook
+    DB2 --> Svc2: updated
+end
+
+Svc2 -> DB2: COMMIT TRANSACTION
+DB2 --> Svc2: committed
+deactivate DB2
+
+Svc2 -> Cache2: invalidate("chapters:{idBook}:*")
+activate Cache2
+Cache2 --> Svc2: cleared
+deactivate Cache2
+
+Svc2 --> Ctrl2: success
+deactivate Svc2
+
+Ctrl2 --> Admin2: 200 OK\n{message: "Chapters reordered"}
+deactivate Ctrl2
+
+|||
+
+' ===== UC-35: Criar Capítulo Manual =====
+actor "Administrador" as Admin3
+participant "AdminBooksController" as Ctrl3
+participant "JwtAuthGuard\n+ RoleGuard" as Guard3
+participant "ChapterManagementService" as ChapMgmt3
+database "Database" as DB3
+
+== UC-35: Criar Capítulo Manual ==
+
+Admin3 -> Ctrl3: POST /books/{idBook}/chapters/manual\n{title, index}\nAuthorization: Bearer {adminToken}
+activate Ctrl3
+
+Ctrl3 -> Guard3: validate(token, role=ADMIN)
+activate Guard3
+Guard3 --> Ctrl3: currentUser (admin)
+deactivate Guard3
+
+Ctrl3 -> ChapMgmt3: createManualChapter(idBook, dto)
+activate ChapMgmt3
+
+ChapMgmt3 -> DB3: SELECT FROM books WHERE id = idBook
+activate DB3
+DB3 --> ChapMgmt3: book
+deactivate DB3
+
+ChapMgmt3 -> DB3: INSERT INTO chapters\n(bookId, title, index, originalUrl, scrapingStatus)\nVALUES (idBook, ?, ?, 'manual', 'DONE')
+activate DB3
+DB3 --> ChapMgmt3: chapter
+deactivate DB3
+
+ChapMgmt3 --> Ctrl3: Chapter
+deactivate ChapMgmt3
+
+Ctrl3 --> Admin3: 201 Created\n{chapter}
+deactivate Ctrl3
+
+note right of Admin3
+  Capítulo criado sem URL
+  para upload manual de páginas
+end note
+
+|||
+
+' ===== UC-47: Upload de Páginas =====
+actor "Administrador" as Admin4
+participant "AdminBooksController" as Ctrl4
+participant "JwtAuthGuard\n+ RoleGuard" as Guard4
+participant "BookUploadService" as UploadSvc4
+participant "FilesService" as FileSvc4
+database "Database" as DB4
+participant "FileSystem" as FS4
+
+== UC-47: Upload de Páginas ==
+
+Admin4 -> Ctrl4: POST /chapters/{idChapter}/pages/upload\nContent-Type: multipart/form-data\n{pages: [file1, file2, ...], indices: [1,2,...]}\nAuthorization: Bearer {adminToken}
+activate Ctrl4
+
+Ctrl4 -> Guard4: validate(token, role=ADMIN)
+activate Guard4
+Guard4 --> Ctrl4: currentUser (admin)
+deactivate Guard4
+
+Ctrl4 -> Ctrl4: validateFiles(count, sizes, types)
+Ctrl4 -> Ctrl4: parseIndices(indicesStr)
+
+Ctrl4 -> UploadSvc4: uploadChapterPages(idChapter, files, indices)
+activate UploadSvc4
+
+UploadSvc4 -> DB4: SELECT FROM chapters WHERE id = idChapter
+activate DB4
+DB4 --> UploadSvc4: chapter
+deactivate DB4
+
+UploadSvc4 -> DB4: BEGIN TRANSACTION
+activate DB4
+
+loop Para cada file e index
+    UploadSvc4 -> FileSvc4: saveFile(file.buffer, path)
+    activate FileSvc4
+    FileSvc4 -> FS4: writeFile(path, buffer)
+    activate FS4
+    FS4 --> FileSvc4: saved
+    deactivate FS4
+    FileSvc4 --> UploadSvc4: filePath
+    deactivate FileSvc4
+
+    UploadSvc4 -> DB4: INSERT INTO pages\n(chapterId, index, path)
+    DB4 --> UploadSvc4: page
+end
+
+UploadSvc4 -> DB4: COMMIT TRANSACTION
+DB4 --> UploadSvc4: committed
+deactivate DB4
+
+UploadSvc4 --> Ctrl4: pages[]
+deactivate UploadSvc4
+
+Ctrl4 --> Admin4: 201 Created\n{pages: [...]}
+deactivate Ctrl4
+
+|||
+
+' ===== UC-37: Excluir Capítulo =====
+actor "Administrador" as Admin5
+participant "AdminBooksController" as Ctrl5
+participant "JwtAuthGuard\n+ RoleGuard" as Guard5
+participant "BookDeletionService" as DelSvc5
+database "Database" as DB5
+participant "Cache" as Cache5
+
+== UC-37: Excluir Capítulo ==
+
+Admin5 -> Ctrl5: DELETE /chapters/{idChapter}\nAuthorization: Bearer {adminToken}
+activate Ctrl5
+
+Ctrl5 -> Guard5: validate(token, role=ADMIN)
+activate Guard5
+Guard5 --> Ctrl5: currentUser (admin)
+deactivate Guard5
+
+Ctrl5 -> DelSvc5: deleteChapter(idChapter)
+activate DelSvc5
+
+DelSvc5 -> DB5: SELECT FROM chapters\nWHERE id = idChapter\nJOIN book
+activate DB5
+DB5 --> DelSvc5: chapter with book
+deactivate DB5
+
+DelSvc5 -> DB5: UPDATE chapters\nSET deletedAt = NOW()\nWHERE id = idChapter
+activate DB5
+DB5 --> DelSvc5: soft deleted
+deactivate DB5
+
+DelSvc5 -> DB5: UPDATE pages\nSET deletedAt = NOW()\nWHERE chapterId = idChapter
+activate DB5
+DB5 --> DelSvc5: pages soft deleted
+deactivate DB5
+
+DelSvc5 -> Cache5: invalidate("chapter:{idChapter}")
+activate Cache5
+Cache5 --> DelSvc5: cleared
+deactivate Cache5
+
+DelSvc5 -> Cache5: invalidate("chapters:{bookId}:*")
+activate Cache5
+Cache5 --> DelSvc5: cleared
+deactivate Cache5
+
+DelSvc5 --> Ctrl5: success
+deactivate DelSvc5
+
+Ctrl5 --> Admin5: 200 OK\n{message: "Chapter soft deleted"}
+deactivate Ctrl5
+
+|||
+
+' ===== UC-56: Visualizar Visão Geral (Dashboard) =====
+actor "Administrador" as Admin6
+participant "AdminBooksController" as Ctrl6
+participant "JwtAuthGuard\n+ RoleGuard" as Guard6
+participant "BooksService" as Svc6
+database "Database" as DB6
+participant "Cache" as Cache6
+
+== UC-56: Visualizar Visão Geral (Dashboard) ==
+
+Admin6 -> Ctrl6: GET /books/dashboard/overview\nAuthorization: Bearer {adminToken}
+activate Ctrl6
+
+Ctrl6 -> Guard6: validate(token, role=ADMIN)
+activate Guard6
+Guard6 --> Ctrl6: currentUser (admin)
+deactivate Guard6
+
+Ctrl6 -> Cache6: get("dashboard:overview")
+activate Cache6
+Cache6 --> Ctrl6: null (cache miss)
+deactivate Cache6
+
+Ctrl6 -> Svc6: getDashboardOverview()
+activate Svc6
+
+par Queries paralelas
+    Svc6 -> DB6: SELECT COUNT(*) FROM books\nWHERE deletedAt IS NULL
+    activate DB6
+    DB6 --> Svc6: totalBooks
+    deactivate DB6
+
+    Svc6 -> DB6: SELECT COUNT(*) FROM chapters\nWHERE deletedAt IS NULL
+    activate DB6
+    DB6 --> Svc6: totalChapters
+    deactivate DB6
+
+    Svc6 -> DB6: SELECT COUNT(*) FROM users
+    activate DB6
+    DB6 --> Svc6: totalUsers
+    deactivate DB6
+
+    Svc6 -> DB6: SELECT COUNT(*) FROM books\nWHERE scrapingStatus = 'PROCESS'
+    activate DB6
+    DB6 --> Svc6: booksProcessing
+    deactivate DB6
+end
+
+Svc6 -> Svc6: buildDashboardData()
+
+Svc6 --> Ctrl6: DashboardData
+deactivate Svc6
+
+Ctrl6 -> Cache6: set("dashboard:overview", data, 3600s)
+activate Cache6
+Cache6 --> Ctrl6: cached
+deactivate Cache6
+
+Ctrl6 --> Admin6: 200 OK\n{totalBooks, totalChapters, totalUsers, ...}
+deactivate Ctrl6
+
+@enduml

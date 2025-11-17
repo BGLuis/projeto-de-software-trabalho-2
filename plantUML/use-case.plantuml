@@ -1,0 +1,188 @@
+@startuml Diagrama de Casos de Uso
+
+left to right direction
+skinparam packageStyle rectangle
+
+' Atores
+actor "Usuário\nAnônimo" as Anonimo
+actor "Usuário\nAutenticado" as Usuario
+actor "Administrador" as Admin
+
+' Herança de atores
+Usuario <|-- Admin
+
+' === AUTENTICAÇÃO ===
+package "Autenticação" {
+    usecase "UC-01: Criar Conta" as UC01
+    usecase "UC-02: Fazer Login" as UC02
+    usecase "UC-03: Atualizar Token" as UC03
+    usecase "UC-04: Fazer Logout" as UC04
+    usecase "UC-05: Logout de\nTodas Sessões" as UC05
+}
+
+' === GERENCIAMENTO DE PERFIL ===
+package "Gerenciamento de Perfil" {
+    usecase "UC-06: Atualizar\nPerfil" as UC06
+}
+
+' === LIVROS (CONSULTA) ===
+package "Consulta de Livros" {
+    usecase "UC-07: Listar Livros" as UC07
+    usecase "UC-08: Buscar Livro\nAleatório" as UC08
+    usecase "UC-09: Visualizar\nDetalhes do Livro" as UC09
+    usecase "UC-10: Listar Capítulos\ndo Livro" as UC10
+    usecase "UC-11: Visualizar\nCapas do Livro" as UC11
+    usecase "UC-12: Obter Informações\ndo Livro" as UC12
+}
+
+' === CAPÍTULOS ===
+package "Leitura de Capítulos" {
+    usecase "UC-13: Visualizar\nCapítulo" as UC13
+    usecase "UC-14: Marcar Capítulo\ncomo Lido" as UC14
+}
+
+' === COLEÇÕES ===
+package "Coleções de Livros" {
+    usecase "UC-15: Listar Minhas\nColeções" as UC15
+    usecase "UC-16: Visualizar\nColeção" as UC16
+    usecase "UC-17: Criar Coleção" as UC17
+    usecase "UC-18: Adicionar Livro\nà Coleção" as UC18
+    usecase "UC-19: Remover Livro\nda Coleção" as UC19
+    usecase "UC-20: Excluir Coleção" as UC20
+}
+
+' === TAGS, AUTORES E CONTEÚDO SENSÍVEL ===
+package "Metadados" {
+    usecase "UC-21: Listar Tags" as UC21
+    usecase "UC-22: Listar Autores" as UC22
+    usecase "UC-23: Listar Conteúdo\nSensível" as UC23
+}
+
+' === ADMINISTRAÇÃO DE LIVROS ===
+package "Administração de Livros" {
+    usecase "UC-24: Criar Livro" as UC24
+    usecase "UC-25: Atualizar Livro" as UC25
+    usecase "UC-26: Verificar\nTítulo Duplicado" as UC26
+    usecase "UC-27: Verificar\nIntegridade do Livro" as UC27
+    usecase "UC-28: Corrigir Livro" as UC28
+    usecase "UC-29: Resetar Cache\ndo Livro" as UC29
+    usecase "UC-30: Excluir Livro\n(Soft Delete)" as UC30
+    usecase "UC-31: Excluir Livros\nem Lote" as UC31
+    usecase "UC-32: Listar Livros\nExcluídos" as UC32
+}
+
+' === ADMINISTRAÇÃO DE CAPÍTULOS ===
+package "Administração de Capítulos" {
+    usecase "UC-33: Atualizar\nCapítulos" as UC33
+    usecase "UC-34: Reordenar\nCapítulos" as UC34
+    usecase "UC-35: Criar Capítulo\nManual" as UC35
+    usecase "UC-36: Resetar Cache\ndo Capítulo" as UC36
+    usecase "UC-37: Excluir Capítulo" as UC37
+    usecase "UC-38: Excluir Capítulos\nem Lote" as UC38
+    usecase "UC-39: Listar Capítulos\nExcluídos" as UC39
+    usecase "UC-40: Listar Capítulos\ncom Poucas Páginas" as UC40
+}
+
+' === ADMINISTRAÇÃO DE CAPAS ===
+package "Administração de Capas" {
+    usecase "UC-41: Upload de Capa" as UC41
+    usecase "UC-42: Upload de\nMúltiplas Capas" as UC42
+    usecase "UC-43: Selecionar Capa\nPrincipal" as UC43
+    usecase "UC-44: Excluir Capa" as UC44
+    usecase "UC-45: Excluir Capas\nem Lote" as UC45
+    usecase "UC-46: Listar Capas\nExcluídas" as UC46
+}
+
+' === ADMINISTRAÇÃO DE PÁGINAS ===
+package "Administração de Páginas" {
+    usecase "UC-47: Upload de\nPáginas" as UC47
+    usecase "UC-48: Excluir Páginas" as UC48
+    usecase "UC-49: Listar Páginas\nExcluídas" as UC49
+}
+
+' === ADMINISTRAÇÃO DE METADADOS ===
+package "Administração de Metadados" {
+    usecase "UC-50: Mesclar Tags" as UC50
+    usecase "UC-51: Mesclar Autores" as UC51
+    usecase "UC-52: Criar Conteúdo\nSensível" as UC52
+    usecase "UC-53: Atualizar Conteúdo\nSensível" as UC53
+    usecase "UC-54: Excluir Conteúdo\nSensível" as UC54
+    usecase "UC-55: Mesclar Conteúdo\nSensível" as UC55
+}
+
+' === DASHBOARD ===
+package "Dashboard Administrativo" {
+    usecase "UC-56: Visualizar\nVisão Geral" as UC56
+    usecase "UC-57: Visualizar Status\nde Processamento" as UC57
+}
+
+' === SCRAPING ===
+package "Web Scraping" {
+    usecase "UC-58: Registrar Site\npara Scraping" as UC58
+}
+
+' === Relacionamentos: Usuário Anônimo ===
+Anonimo --> UC01
+Anonimo --> UC02
+Anonimo --> UC07
+Anonimo --> UC08
+Anonimo --> UC09
+Anonimo --> UC10
+Anonimo --> UC11
+Anonimo --> UC12
+Anonimo --> UC13
+Anonimo --> UC21
+Anonimo --> UC22
+Anonimo --> UC23
+
+' === Relacionamentos: Usuário Autenticado ===
+Usuario --> UC03
+Usuario --> UC04
+Usuario --> UC05
+Usuario --> UC06
+Usuario --> UC14
+Usuario --> UC15
+Usuario --> UC16
+Usuario --> UC17
+Usuario --> UC18
+Usuario --> UC19
+Usuario --> UC20
+
+' === Relacionamentos: Administrador ===
+Admin --> UC24
+Admin --> UC25
+Admin --> UC26
+Admin --> UC27
+Admin --> UC28
+Admin --> UC29
+Admin --> UC30
+Admin --> UC31
+Admin --> UC32
+Admin --> UC33
+Admin --> UC34
+Admin --> UC35
+Admin --> UC36
+Admin --> UC37
+Admin --> UC38
+Admin --> UC39
+Admin --> UC40
+Admin --> UC41
+Admin --> UC42
+Admin --> UC43
+Admin --> UC44
+Admin --> UC45
+Admin --> UC46
+Admin --> UC47
+Admin --> UC48
+Admin --> UC49
+Admin --> UC50
+Admin --> UC51
+Admin --> UC52
+Admin --> UC53
+Admin --> UC54
+Admin --> UC55
+Admin --> UC56
+Admin --> UC57
+Admin --> UC58
+
+@enduml

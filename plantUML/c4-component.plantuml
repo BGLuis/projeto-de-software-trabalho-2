@@ -1,0 +1,81 @@
+@startuml C4 Component Diagram
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Diagrama de Componentes (C4 Level 3) - API Backend
+
+Container(web_app, "Aplicação Web", "Angular", "SPA com SSR")
+ContainerDb(db_master, "Database Master", "MySQL 8.0")
+ContainerDb(db_slave, "Database Slaves", "MySQL 8.0")
+ContainerDb(cache, "Redis Cache", "Redis 8.0")
+Container(file_storage, "File Storage", "Filesystem")
+Container(selenium, "Selenium Grid", "Selenium Hub")
+
+Container_Boundary(api, "API Backend") {
+
+    Component(auth_ctrl, "Auth Controller", "NestJS Controller", "Endpoints de autenticação e registro")
+    Component(books_ctrl, "Books Controller", "NestJS Controller", "Endpoints públicos de livros")
+    Component(admin_books_ctrl, "Admin Books Controller", "NestJS Controller", "Endpoints administrativos de livros")
+    Component(users_ctrl, "Users Controller", "NestJS Controller", "Gerenciamento de usuários e perfis")
+    Component(collections_ctrl, "Collections Controller", "NestJS Controller", "Coleções pessoais de livros")
+    Component(chapters_ctrl, "Chapters Controller", "NestJS Controller", "Visualização de capítulos")
+
+    Component(auth_service, "Auth Service", "Service", "Lógica de autenticação JWT")
+    Component(books_service, "Books Service", "Service", "Lógica de negócio de livros")
+    Component(users_service, "Users Service", "Service", "Lógica de usuários")
+    Component(scraping_service, "Scraping Service", "Service", "Coordena jobs de scraping")
+    Component(files_service, "Files Service", "Service", "Upload e processamento de arquivos")
+
+    Component(jwt_guard, "JWT Guard", "Guard", "Valida tokens JWT")
+    Component(roles_guard, "Roles Guard", "Guard", "Verifica permissões de role")
+    Component(throttler, "Throttler Guard", "Guard", "Rate limiting por IP")
+
+    Component(book_repo, "Book Repository", "TypeORM Repository", "Acesso a dados de livros")
+    Component(user_repo, "User Repository", "TypeORM Repository", "Acesso a dados de usuários")
+    Component(chapter_repo, "Chapter Repository", "TypeORM Repository", "Acesso a dados de capítulos")
+
+    Component(cache_manager, "Cache Manager", "Service", "Gerencia cache Redis")
+    Component(queue_service, "Queue Service", "BullMQ", "Fila de jobs assíncronos")
+    Component(metrics_service, "Metrics Service", "Prometheus Client", "Exporta métricas")
+}
+
+Rel(web_app, auth_ctrl, "POST /auth/login", "HTTPS/JSON")
+Rel(web_app, books_ctrl, "GET /books", "HTTPS/JSON")
+Rel(web_app, admin_books_ctrl, "POST /admin/books", "HTTPS/JSON")
+Rel(web_app, users_ctrl, "PATCH /users/me", "HTTPS/JSON")
+Rel(web_app, collections_ctrl, "GET /collections", "HTTPS/JSON")
+Rel(web_app, chapters_ctrl, "GET /chapters/:id", "HTTPS/JSON")
+
+Rel(auth_ctrl, jwt_guard, "Usa")
+Rel(admin_books_ctrl, roles_guard, "Usa")
+Rel(books_ctrl, throttler, "Usa")
+
+Rel(auth_ctrl, auth_service, "Usa")
+Rel(books_ctrl, books_service, "Usa")
+Rel(admin_books_ctrl, books_service, "Usa")
+Rel(users_ctrl, users_service, "Usa")
+Rel(chapters_ctrl, books_service, "Usa")
+
+Rel(auth_service, user_repo, "Usa")
+Rel(books_service, book_repo, "Usa")
+Rel(books_service, chapter_repo, "Usa")
+Rel(users_service, user_repo, "Usa")
+
+Rel(book_repo, db_master, "Write operations", "MySQL")
+Rel(book_repo, db_slave, "Read operations", "MySQL")
+Rel(user_repo, db_master, "Write operations", "MySQL")
+Rel(user_repo, db_slave, "Read operations", "MySQL")
+
+Rel(auth_service, cache_manager, "Usa")
+Rel(books_service, cache_manager, "Usa")
+Rel(cache_manager, cache, "Lê/Escreve", "Redis Protocol")
+
+Rel(files_service, file_storage, "Salva/Lê arquivos", "File I/O")
+Rel(scraping_service, queue_service, "Enfileira jobs", "BullMQ")
+Rel(scraping_service, selenium, "Executa scraping", "WebDriver Protocol")
+
+Rel(metrics_service, books_service, "Coleta métricas")
+Rel(metrics_service, auth_service, "Coleta métricas")
+
+@enduml

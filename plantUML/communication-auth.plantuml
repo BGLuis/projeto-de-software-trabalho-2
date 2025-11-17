@@ -1,0 +1,237 @@
+@startuml Diagrama de Comunicação - Autenticação
+
+title Diagrama de Comunicação - UC-01: Criar Conta e UC-02: Login
+
+' Objetos
+object ":Cliente\nWeb" as Client
+object ":AuthController" as Controller
+object ":AuthService" as Service
+object ":UsersService" as UserService
+object ":EncryptionService" as Encryption
+object ":UserRepository" as UserRepo
+object ":RoleRepository" as RoleRepo
+object ":Database\nMySQL" as DB
+object ":JWTService" as JWT
+object ":RedisCache" as Cache
+
+' === UC-01: CRIAR CONTA ===
+
+Client -> Controller : **1:** POST /auth/register(email, password, name)
+note right: CreateUserDto
+
+Controller -> Service : **1.1:** register(createUserDto)
+
+Service -> UserService : **1.1.1:** findByEmail(email)
+UserService -> UserRepo : **1.1.1.1:** findOne({email})
+UserRepo -> DB : **1.1.1.1.1:** SELECT * FROM users WHERE email=?
+DB --> UserRepo : **1.1.1.1.2:** null (email disponível)
+UserRepo --> UserService : **1.1.1.2:** null
+UserService --> Service : **1.1.2:** null
+
+Service -> Encryption : **1.1.3:** hashPassword(password)
+Encryption --> Service : **1.1.4:** hashedPassword
+
+Service -> RoleRepo : **1.1.5:** findOne({name: 'user'})
+RoleRepo -> DB : **1.1.5.1:** SELECT * FROM roles WHERE name='user'
+DB --> RoleRepo : **1.1.5.2:** roleData
+RoleRepo --> Service : **1.1.6:** userRole
+
+Service -> UserService : **1.1.7:** create({email, hashedPassword, name, role})
+UserService -> UserRepo : **1.1.7.1:** save(userData)
+UserRepo -> DB : **1.1.7.1.1:** INSERT INTO users (...)
+DB --> UserRepo : **1.1.7.1.2:** newUser
+UserRepo --> UserService : **1.1.7.2:** user
+UserService --> Service : **1.1.8:** createdUser
+
+Service -> JWT : **1.1.9:** generateAccessToken(user)
+JWT --> Service : **1.1.10:** accessToken
+
+Service -> JWT : **1.1.11:** generateRefreshToken(user)
+JWT --> Service : **1.1.12:** refreshToken
+
+Service -> Cache : **1.1.13:** set(refreshToken, userId, TTL)
+Cache --> Service : **1.1.14:** OK
+
+Service --> Controller : **1.2:** {accessToken, refreshToken, user}
+Controller --> Client : **2:** 201 Created {accessToken, refreshToken, user}
+
+note bottom of Client
+    **Fluxo UC-01: Criar Conta**
+    1. Cliente envia dados de registro
+    2. Sistema valida email único
+    3. Senha é criptografada (bcrypt)
+    4. Role padrão 'user' é atribuído
+    5. Usuário é criado no banco
+    6. Tokens JWT são gerados
+    7. Refresh token armazenado no Redis
+    8. Resposta com tokens e dados do usuário
+end note
+
+@enduml
+
+@startuml Diagrama de Comunicação - UC-02: Login
+
+title Diagrama de Comunicação - UC-02: Fazer Login
+
+' Objetos
+object ":Cliente\nWeb" as Client
+object ":AuthController" as Controller
+object ":AuthService" as Service
+object ":UsersService" as UserService
+object ":EncryptionService" as Encryption
+object ":UserRepository" as UserRepo
+object ":Database\nMySQL" as DB
+object ":JWTService" as JWT
+object ":RedisCache" as Cache
+
+' === UC-02: LOGIN ===
+
+Client -> Controller : **1:** POST /auth/login(email, password)
+note right: LoginDto
+
+Controller -> Service : **1.1:** login(loginDto)
+
+Service -> UserService : **1.1.1:** findByEmail(email)
+UserService -> UserRepo : **1.1.1.1:** findOne({email}, {relations: ['role']})
+UserRepo -> DB : **1.1.1.1.1:** SELECT u.*, r.* FROM users u JOIN roles r WHERE email=?
+DB --> UserRepo : **1.1.1.1.2:** userData with role
+UserRepo --> UserService : **1.1.1.2:** user
+UserService --> Service : **1.1.2:** user
+
+Service -> Encryption : **1.1.3:** comparePassword(password, user.password)
+Encryption --> Service : **1.1.4:** true (autenticado)
+
+Service -> JWT : **1.1.5:** generateAccessToken(user)
+JWT --> Service : **1.1.6:** accessToken
+
+Service -> JWT : **1.1.7:** generateRefreshToken(user)
+JWT --> Service : **1.1.8:** refreshToken
+
+Service -> Cache : **1.1.9:** set(refreshToken, userId, TTL=7d)
+Cache --> Service : **1.1.10:** OK
+
+Service --> Controller : **1.2:** {accessToken, refreshToken, user}
+Controller --> Client : **2:** 200 OK {accessToken, refreshToken, user}
+
+note bottom of Client
+    **Fluxo UC-02: Login**
+    1. Cliente envia credenciais
+    2. Sistema busca usuário por email
+    3. Senha é comparada com bcrypt
+    4. Tokens JWT são gerados
+    5. Refresh token salvo no Redis (TTL 7 dias)
+    6. Access token válido por 15min
+    7. Resposta com tokens e dados do usuário
+
+    **Segurança:**
+    - Password nunca retornado
+    - Tokens únicos por sessão
+    - Rate limiting aplicado
+end note
+
+@enduml
+
+@startuml Diagrama de Comunicação - UC-03: Atualizar Token
+
+title Diagrama de Comunicação - UC-03: Atualizar Token (Refresh)
+
+' Objetos
+object ":Cliente\nWeb" as Client
+object ":AuthController" as Controller
+object ":AuthService" as Service
+object ":JWTService" as JWT
+object ":RedisCache" as Cache
+object ":UsersService" as UserService
+object ":UserRepository" as UserRepo
+object ":Database\nMySQL" as DB
+
+' === UC-03: REFRESH TOKEN ===
+
+Client -> Controller : **1:** POST /auth/refresh(refreshToken)
+note right: RefreshTokenDto
+
+Controller -> Service : **1.1:** refreshAccessToken(refreshToken)
+
+Service -> JWT : **1.1.1:** verifyRefreshToken(refreshToken)
+JWT --> Service : **1.1.2:** {userId, email}
+
+Service -> Cache : **1.1.3:** get(refreshToken)
+Cache --> Service : **1.1.4:** userId (token válido no Redis)
+
+Service -> UserService : **1.1.5:** findById(userId)
+UserService -> UserRepo : **1.1.5.1:** findOne({id: userId}, {relations: ['role']})
+UserRepo -> DB : **1.1.5.1.1:** SELECT u.*, r.* FROM users u JOIN roles r WHERE id=?
+DB --> UserRepo : **1.1.5.1.2:** userData
+UserRepo --> UserService : **1.1.5.2:** user
+UserService --> Service : **1.1.6:** user
+
+Service -> JWT : **1.1.7:** generateAccessToken(user)
+JWT --> Service : **1.1.8:** newAccessToken
+
+Service --> Controller : **1.2:** {accessToken}
+Controller --> Client : **2:** 200 OK {accessToken}
+
+note bottom of Client
+    **Fluxo UC-03: Refresh Token**
+    1. Cliente envia refresh token
+    2. Token JWT é verificado e decodificado
+    3. Redis valida se token ainda é válido
+    4. Usuário é carregado do banco
+    5. Novo access token é gerado (15min)
+    6. Refresh token permanece o mesmo
+
+    **Validações:**
+    - Refresh token deve estar no Redis
+    - Usuário deve existir e estar ativo
+    - Token não expirado (7 dias)
+end note
+
+@enduml
+
+@startuml Diagrama de Comunicação - UC-04: Logout
+
+title Diagrama de Comunicação - UC-04: Fazer Logout
+
+' Objetos
+object ":Cliente\nWeb" as Client
+object ":AuthController" as Controller
+object ":AuthService" as Service
+object ":RedisCache" as Cache
+object ":JWTGuard" as Guard
+
+' === UC-04: LOGOUT ===
+
+Client -> Controller : **1:** POST /auth/logout(Authorization: Bearer token)
+note right: Header with JWT
+
+Guard -> Client : **1.0.1:** validateToken()
+Client -> Guard : **1.0.2:** accessToken
+Guard --> Controller : **1.0.3:** user authenticated
+
+Controller -> Service : **1.1:** logout(userId, refreshToken)
+
+Service -> Cache : **1.1.1:** del(refreshToken)
+Cache --> Service : **1.1.2:** 1 (token removido)
+
+Service -> Cache : **1.1.3:** set(accessToken, "blacklist", TTL=15min)
+note right: Blacklist do access token
+Cache --> Service : **1.1.4:** OK
+
+Service --> Controller : **1.2:** {message: "Logout realizado"}
+Controller --> Client : **2:** 200 OK {message}
+
+note bottom of Client
+    **Fluxo UC-04: Logout**
+    1. Cliente envia requisição com JWT
+    2. Guard valida token
+    3. Refresh token é removido do Redis
+    4. Access token vai para blacklist (até expirar)
+    5. Cliente deve descartar tokens localmente
+
+    **Efeitos:**
+    - Sessão invalidada
+    - Refresh token não pode mais ser usado
+    - Access token bloqueado por 15min
+end note
+
+@enduml

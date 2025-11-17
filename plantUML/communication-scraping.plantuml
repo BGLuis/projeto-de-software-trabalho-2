@@ -1,0 +1,277 @@
+@startuml Diagrama de Comunicação - Web Scraping
+
+title Diagrama de Comunicação - UC-47: Scraping de Capítulos
+
+' Objetos
+object ":Admin\nClient" as Client
+object ":AdminBooksController" as Controller
+object ":ChapterScrapingService" as ScrapingService
+object ":ScrapingService" as SeleniumService
+object ":BookRepository" as BookRepo
+object ":ChapterRepository" as ChapterRepo
+object ":PageRepository" as PageRepo
+object ":FilesService" as FilesService
+object ":SeleniumHub" as SeleniumHub
+object ":ChromeDocker" as Chrome
+object ":FileStorage" as FileStorage
+object ":Database\nMySQL Master" as DBMaster
+object ":RedisCache" as Cache
+object ":QueueService" as Queue
+
+' === UC-47: SCRAPING DE CAPÍTULOS ===
+
+Client -> Controller : **1:** POST /admin/books/:bookId/scrape-chapters\nAuthorization: Bearer adminToken
+
+Controller -> ScrapingService : **1.1:** scrapeChapters(bookId)
+
+ScrapingService -> BookRepo : **1.1.1:** findOne({id: bookId}, {relations: ['website']})
+BookRepo -> DBMaster : **1.1.1.1:** SELECT b.*, w.* FROM books b JOIN websites w WHERE b.id=?
+DBMaster --> BookRepo : **1.1.1.2:** bookData with website config
+BookRepo --> ScrapingService : **1.1.2:** book
+
+ScrapingService -> Queue : **1.1.3:** add("scraping-queue", {bookId, url, websiteId})
+note right
+    Adiciona job na fila:
+    - Processamento assíncrono
+    - Retry automático (3x)
+    - Timeout: 5min por capítulo
+end note
+Queue --> ScrapingService : **1.1.4:** jobId
+
+ScrapingService --> Controller : **1.2:** {jobId, status: "queued"}
+Controller --> Client : **2:** 202 Accepted {jobId, message: "Scraping iniciado"}
+
+note right of Client
+    Resposta assíncrona:
+    Cliente pode consultar status via:
+    GET /admin/jobs/:jobId
+end note
+
+' === PROCESSAMENTO ASSÍNCRONO ===
+
+Queue -> ScrapingService : **3:** processJob(jobData)
+
+ScrapingService -> SeleniumService : **3.1:** scrape(url, websiteId)
+
+SeleniumService -> SeleniumHub : **3.1.1:** requestSession({browserName: "chrome"})
+SeleniumHub -> Chrome : **3.1.1.1:** createContainer()
+Chrome --> SeleniumHub : **3.1.1.2:** sessionId
+SeleniumHub --> SeleniumService : **3.1.2:** session
+
+SeleniumService -> Chrome : **3.1.3:** navigate(book.url)
+Chrome --> SeleniumService : **3.1.4:** page loaded
+
+SeleniumService -> Chrome : **3.1.5:** executeScript(website.selectors.chapterList)
+note right
+    Selectors específicos por website:
+    - chapterListSelector
+    - chapterTitleSelector
+    - chapterUrlSelector
+end note
+Chrome --> SeleniumService : **3.1.6:** chaptersData[]
+
+note left of SeleniumService
+    Para cada capítulo encontrado:
+    Loop de processamento assíncrono
+end note
+
+SeleniumService -> Chrome : **3.1.7:** navigate(chapter.url)
+Chrome --> SeleniumService : **3.1.8:** chapter page loaded
+
+SeleniumService -> Chrome : **3.1.9:** executeScript(website.selectors.pageImages)
+Chrome --> SeleniumService : **3.1.10:** imageUrls[]
+
+SeleniumService -> SeleniumService : **3.1.11:** downloadImages(imageUrls[])
+
+note right of SeleniumService
+    Para cada imageUrl:
+    3.1.11.1: httpGet(imageUrl)
+    3.1.11.2: imageBuffer recebido
+end note
+
+SeleniumService --> ScrapingService : **3.1.12:** {title, number, images[]}
+
+ScrapingService -> ChapterRepo : **3.1.13:** findOrCreate({bookId, number})
+ChapterRepo -> DBMaster : **3.1.13.1:** INSERT INTO chapters (book_id, title, number)\nON DUPLICATE KEY UPDATE title=?
+DBMaster --> ChapterRepo : **3.1.13.2:** chapter
+ChapterRepo --> ScrapingService : **3.1.14:** chapter
+
+note left of ScrapingService
+    Para cada imagem:
+    Loop de salvamento de páginas
+end note
+
+ScrapingService -> FilesService : **3.1.15:** savePageImage(bookId, chapterId, pageNumber, imageBuffer)
+
+FilesService -> FileStorage : **3.1.15.1:** write(/pages/{bookId}/{chapterId}/{pageNumber}.jpg)
+FileStorage --> FilesService : **3.1.15.2:** imagePath
+
+FilesService --> ScrapingService : **3.1.16:** imagePath
+
+ScrapingService -> PageRepo : **3.1.17:** save({chapterId, pageNumber, imagePath})
+PageRepo -> DBMaster : **3.1.17.1:** INSERT INTO pages (chapter_id, page_number, image_path)
+DBMaster --> PageRepo : **3.1.17.2:** page
+PageRepo --> ScrapingService : **3.1.18:** page
+
+ScrapingService -> Cache : **3.1.19:** del("chapter:" + chapterId + ":*")
+Cache --> ScrapingService : **3.1.20:** OK
+
+SeleniumService -> SeleniumHub : **3.1.21:** closeSession(sessionId)
+SeleniumHub -> Chrome : **3.1.21.1:** destroyContainer()
+
+SeleniumService --> ScrapingService : **3.2:** {totalChapters, totalPages, errors[]}
+
+ScrapingService -> BookRepo : **3.3:** update(bookId, {lastScrapedAt: NOW()})
+BookRepo -> DBMaster : **3.3.1:** UPDATE books SET last_scraped_at=NOW() WHERE id=?
+DBMaster --> BookRepo : **3.3.2:** updated
+BookRepo --> ScrapingService : **3.4:** book
+
+ScrapingService -> Cache : **3.5:** del("book:" + bookId + ":*")
+Cache --> ScrapingService : **3.6:** OK
+
+ScrapingService --> Queue : **3.7:** jobCompleted({totalChapters, totalPages, errors})
+
+note bottom of Queue
+    **Fluxo UC-47: Scraping de Capítulos**
+
+    **Fase 1: Enfileiramento (Síncrono)**
+    1. Admin solicita scraping de livro
+    2. Valida livro e configuração do website
+    3. Adiciona job na fila de processamento
+    4. Retorna 202 Accepted com jobId
+
+    **Fase 2: Processamento (Assíncrono)**
+    5. Worker processa job da fila
+    6. Cria sessão no Selenium Grid
+    7. Navega para página do livro
+    8. Extrai lista de capítulos (selectors)
+    9. Para cada capítulo:
+       a. Navega para página do capítulo
+       b. Extrai URLs das imagens
+       c. Baixa todas as imagens
+       d. Cria/atualiza registro do capítulo
+       e. Salva cada página no filesystem
+       f. Registra páginas no banco
+       g. Invalida cache do capítulo
+    10. Fecha sessão Selenium
+    11. Atualiza lastScrapedAt do livro
+    12. Invalida cache do livro
+    13. Marca job como completo
+
+    **Retry Strategy:**
+    - 3 tentativas automáticas
+    - Backoff exponencial: 1s, 5s, 15s
+    - Timeout: 5min por capítulo
+    - Erros logados para análise
+
+    **Configuração por Website:**
+    - website.selectors.chapterList
+    - website.selectors.chapterTitle
+    - website.selectors.chapterUrl
+    - website.selectors.pageImages
+    - website.baseUrl
+    - website.waitTime (delay entre requests)
+
+    **Estrutura de Arquivos:**
+    /data/pages/{bookId}/{chapterId}/
+      - 1.jpg, 2.jpg, 3.jpg, ...
+
+    **Otimizações:**
+    - Processamento assíncrono
+    - Download paralelo de imagens (max 5)
+    - Container Selenium reutilizado
+    - Cleanup automático de containers
+    - Rate limiting por website
+end note
+
+@enduml
+
+@startuml Diagrama de Comunicação - UC-33: Atualizar Capítulos
+
+title Diagrama de Comunicação - UC-33: Atualizar Capítulos (Re-scraping)
+
+' Objetos
+object ":Admin\nClient" as Client
+object ":AdminBooksController" as Controller
+object ":ChapterScrapingService" as ScrapingService
+object ":BookRepository" as BookRepo
+object ":ChapterRepository" as ChapterRepo
+object ":Database\nMySQL Master" as DBMaster
+object ":RedisCache" as Cache
+object ":QueueService" as Queue
+
+' === UC-33: ATUALIZAR CAPÍTULOS ===
+
+Client -> Controller : **1:** PATCH /admin/books/:bookId/chapters/update\nAuthorization: Bearer adminToken
+
+Controller -> ScrapingService : **1.1:** updateChapters(bookId)
+
+ScrapingService -> BookRepo : **1.1.1:** findOne({id: bookId}, {relations: ['website']})
+BookRepo -> DBMaster : **1.1.1.1:** SELECT b.*, w.* FROM books b JOIN websites w WHERE b.id=?
+DBMaster --> BookRepo : **1.1.1.2:** book with website
+BookRepo --> ScrapingService : **1.1.2:** book
+
+ScrapingService -> ChapterRepo : **1.1.3:** find({bookId, deletedAt: null})
+ChapterRepo -> DBMaster : **1.1.3.1:** SELECT * FROM chapters WHERE book_id=? AND deleted_at IS NULL ORDER BY number
+DBMaster --> ChapterRepo : **1.1.3.2:** existingChapters[]
+ChapterRepo --> ScrapingService : **1.1.4:** currentChapters[]
+
+ScrapingService -> Queue : **1.1.5:** add("update-queue", {bookId, existingChapters, mode: "update"})
+note right
+    Mode: "update"
+    - Só scraping novos capítulos
+    - Compara com existentes
+    - Não refaz capítulos completos
+end note
+Queue --> ScrapingService : **1.1.6:** jobId
+
+ScrapingService --> Controller : **1.2:** {jobId, status: "queued", currentChapters: count}
+Controller --> Client : **2:** 202 Accepted {jobId, message}
+
+' === PROCESSAMENTO ASSÍNCRONO ===
+
+Queue -> ScrapingService : **3:** processUpdateJob(jobData)
+
+ScrapingService -> ScrapingService : **3.1:** scrapeNewChapters(book, existingChapters)
+note right
+    Lógica:
+    1. Scrape lista de capítulos do site
+    2. Compara números com existingChapters
+    3. Identifica novos (number > max)
+    4. Scrape apenas novos capítulos
+    5. Não reprocessa existentes
+end note
+
+ScrapingService -> Cache : **3.2:** del("book:" + bookId + ":chapters")
+Cache --> ScrapingService : **3.3:** OK
+
+ScrapingService --> Queue : **3.4:** jobCompleted({newChapters, skipped})
+
+note bottom of Client
+    **Fluxo UC-33: Atualizar Capítulos**
+
+    1. Admin solicita atualização de capítulos
+    2. Sistema carrega capítulos existentes
+    3. Enfileira job de atualização
+    4. Retorna 202 Accepted
+
+    **Processamento Assíncrono:**
+    5. Scrape lista atual do site
+    6. Compara com capítulos existentes
+    7. Identifica novos capítulos (number > max)
+    8. Scrape apenas novos capítulos
+    9. Pula capítulos já existentes
+    10. Atualiza cache
+    11. Marca job como completo
+
+    **Diferença vs UC-47:**
+    - UC-47: Scraping completo (todos capítulos)
+    - UC-33: Incremental (apenas novos)
+
+    **Uso:**
+    - Atualização periódica de mangás em andamento
+    - Economiza recursos (não refaz existentes)
+    - Mantém histórico de scraping
+end note
+
+@enduml

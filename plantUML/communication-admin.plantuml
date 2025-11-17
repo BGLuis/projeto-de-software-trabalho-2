@@ -1,0 +1,265 @@
+@startuml Diagrama de Comunicação - Administração de Livros
+
+title Diagrama de Comunicação - UC-24: Criar Livro
+
+' Objetos
+object ":Admin\nClient" as Client
+object ":AdminBooksController" as Controller
+object ":BookCreationService" as CreationService
+object ":BookRepository" as BookRepo
+object ":AuthorRepository" as AuthorRepo
+object ":TagRepository" as TagRepo
+object ":WebsiteRepository" as WebsiteRepo
+object ":JWTGuard" as Guard
+object ":RolesGuard" as RoleGuard
+object ":RedisCache" as Cache
+object ":Database\nMySQL Master" as DBMaster
+
+' === UC-24: CRIAR LIVRO ===
+
+Client -> Controller : **1:** POST /admin/books\n{title, description, status, authorIds[], tagIds[], websiteId, url}\nAuthorization: Bearer adminToken
+
+Guard -> Client : **1.0.1:** validateToken()
+Client -> Guard : **1.0.2:** JWT
+Guard -> RoleGuard : **1.0.3:** checkRole(user)
+RoleGuard --> Controller : **1.0.4:** user={id, role: 'admin'} authorized
+
+Controller -> CreationService : **1.1:** create(createBookDto)
+
+CreationService -> BookRepo : **1.1.1:** findOne({title})
+BookRepo -> DBMaster : **1.1.1.1:** SELECT * FROM books WHERE title=?
+DBMaster --> BookRepo : **1.1.1.2:** null (title available)
+BookRepo --> CreationService : **1.1.2:** null
+
+CreationService -> AuthorRepo : **1.1.3:** findByIds(authorIds[])
+AuthorRepo -> DBMaster : **1.1.3.1:** SELECT * FROM authors WHERE id IN (?)
+DBMaster --> AuthorRepo : **1.1.3.2:** authors[]
+AuthorRepo --> CreationService : **1.1.4:** authors[]
+
+CreationService -> TagRepo : **1.1.5:** findByIds(tagIds[])
+TagRepo -> DBMaster : **1.1.5.1:** SELECT * FROM tags WHERE id IN (?)
+DBMaster --> TagRepo : **1.1.5.2:** tags[]
+TagRepo --> CreationService : **1.1.6:** tags[]
+
+CreationService -> WebsiteRepo : **1.1.7:** findOne({id: websiteId})
+WebsiteRepo -> DBMaster : **1.1.7.1:** SELECT * FROM websites WHERE id=?
+DBMaster --> WebsiteRepo : **1.1.7.2:** website
+WebsiteRepo --> CreationService : **1.1.8:** website
+
+CreationService -> BookRepo : **1.1.9:** save({...bookData, authors, tags, website})
+note right
+    Transaction:
+    - INSERT INTO books
+    - INSERT INTO books_authors (junction)
+    - INSERT INTO books_tags (junction)
+end note
+BookRepo -> DBMaster : **1.1.9.1:** BEGIN TRANSACTION;\nINSERT INTO books (...);\nINSERT INTO books_authors VALUES (...);\nCOMMIT;
+DBMaster --> BookRepo : **1.1.9.2:** createdBook
+BookRepo --> CreationService : **1.1.10:** book
+
+CreationService -> Cache : **1.1.11:** del("books:*")
+note right: Invalida todos os caches de listagem
+Cache --> CreationService : **1.1.12:** OK
+
+CreationService --> Controller : **1.2:** book
+Controller --> Client : **2:** 201 Created {book}
+
+note bottom of Client
+    **Fluxo UC-24: Criar Livro (Admin)**
+    1. Admin envia dados completos do livro
+    2. Guards validam: JWT + Role Admin
+    3. Valida título único
+    4. Valida existência de: autores, tags, website
+    5. Cria livro em transação:
+       - Dados principais na tabela books
+       - Relações many-to-many (authors, tags)
+    6. Invalida cache de listagem
+    7. Retorna livro criado
+
+    **Campos Obrigatórios:**
+    - title, description, status
+    - authorIds[] (min 1 autor)
+    - websiteId, url (origem do scraping)
+
+    **Status Possíveis:**
+    - ACTIVE, INACTIVE, DRAFT
+end note
+
+@enduml
+
+@startuml Diagrama de Comunicação - UC-41: Upload de Capa
+
+title Diagrama de Comunicação - UC-41: Upload de Capa
+
+' Objetos
+object ":Admin\nClient" as Client
+object ":AdminBooksController" as Controller
+object ":BookUploadService" as UploadService
+object ":FilesService" as FilesService
+object ":BookRepository" as BookRepo
+object ":CoverRepository" as CoverRepo
+object ":RedisCache" as Cache
+object ":FileStorage" as FileStorage
+object ":Database\nMySQL Master" as DBMaster
+
+' === UC-41: UPLOAD DE CAPA ===
+
+Client -> Controller : **1:** POST /admin/books/:bookId/covers\nContent-Type: multipart/form-data\nfile: image/jpeg\nAuthorization: Bearer adminToken
+
+Controller -> UploadService : **1.1:** uploadCover(bookId, file)
+
+UploadService -> BookRepo : **1.1.1:** findOne({id: bookId})
+BookRepo -> DBMaster : **1.1.1.1:** SELECT * FROM books WHERE id=?
+DBMaster --> BookRepo : **1.1.1.2:** bookData
+BookRepo --> UploadService : **1.1.2:** book
+
+UploadService -> FilesService : **1.1.3:** validateImage(file)
+note right
+    Validações:
+    - MIME type (image/jpeg, image/png)
+    - Tamanho máximo (5MB)
+    - Dimensões mínimas (400x600)
+end note
+FilesService --> UploadService : **1.1.4:** validated
+
+UploadService -> FilesService : **1.1.5:** processImage(file)
+note right
+    Processamento:
+    - Gerar thumbnail (200x300)
+    - Otimizar qualidade (85%)
+    - Salvar original + thumbnail
+end note
+
+FilesService -> FileStorage : **1.1.5.1:** write(/covers/{bookId}/original_{uuid}.jpg)
+FileStorage --> FilesService : **1.1.5.2:** originalPath
+
+FilesService -> FileStorage : **1.1.5.3:** write(/covers/{bookId}/thumb_{uuid}.jpg)
+FileStorage --> FilesService : **1.1.5.4:** thumbPath
+
+FilesService --> UploadService : **1.1.6:** {originalPath, thumbPath, size, dimensions}
+
+UploadService -> CoverRepo : **1.1.7:** save({bookId, imagePath, thumbPath, isPrimary})
+CoverRepo -> DBMaster : **1.1.7.1:** INSERT INTO covers (book_id, image_path, thumb_path, is_primary)\nVALUES (?, ?, ?, ?)
+note right
+    isPrimary = true se for primeira capa
+    isPrimary = false caso contrário
+end note
+DBMaster --> CoverRepo : **1.1.7.2:** coverData
+CoverRepo --> UploadService : **1.1.8:** cover
+
+UploadService -> Cache : **1.1.9:** del("book:" + bookId + ":*")
+Cache --> UploadService : **1.1.10:** OK
+
+UploadService --> Controller : **1.2:** cover
+Controller --> Client : **2:** 201 Created {cover}
+
+note bottom of Client
+    **Fluxo UC-41: Upload de Capa**
+    1. Admin faz upload de imagem (multipart)
+    2. Valida que livro existe
+    3. Valida imagem:
+       - Formato (JPEG/PNG)
+       - Tamanho (max 5MB)
+       - Dimensões mínimas
+    4. Processa imagem:
+       - Salva original
+       - Gera thumbnail otimizado
+    5. Registra capa no banco:
+       - Primeira capa = isPrimary: true
+       - Demais = isPrimary: false
+    6. Invalida cache do livro
+    7. Retorna dados da capa
+
+    **Estrutura de Arquivos:**
+    /data/covers/{bookId}/
+      - original_{uuid}.jpg
+      - thumb_{uuid}.jpg
+
+    **URLs Geradas:**
+    - /files/covers/{bookId}/original_{uuid}.jpg
+    - /files/covers/{bookId}/thumb_{uuid}.jpg
+end note
+
+@enduml
+
+@startuml Diagrama de Comunicação - UC-30: Excluir Livro
+
+title Diagrama de Comunicação - UC-30: Excluir Livro (Soft Delete)
+
+' Objetos
+object ":Admin\nClient" as Client
+object ":AdminBooksController" as Controller
+object ":BookDeletionService" as DeletionService
+object ":BookRepository" as BookRepo
+object ":ChapterRepository" as ChapterRepo
+object ":RedisCache" as Cache
+object ":Database\nMySQL Master" as DBMaster
+
+' === UC-30: SOFT DELETE LIVRO ===
+
+Client -> Controller : **1:** DELETE /admin/books/:bookId\nAuthorization: Bearer adminToken
+
+Controller -> DeletionService : **1.1:** softDelete(bookId)
+
+DeletionService -> BookRepo : **1.1.1:** findOne({id: bookId, deletedAt: null})
+BookRepo -> DBMaster : **1.1.1.1:** SELECT * FROM books WHERE id=? AND deleted_at IS NULL
+DBMaster --> BookRepo : **1.1.1.2:** bookData
+BookRepo --> DeletionService : **1.1.2:** book
+
+DeletionService -> ChapterRepo : **1.1.3:** count({bookId, deletedAt: null})
+ChapterRepo -> DBMaster : **1.1.3.1:** SELECT COUNT(*) FROM chapters WHERE book_id=? AND deleted_at IS NULL
+DBMaster --> ChapterRepo : **1.1.3.2:** chapterCount
+ChapterRepo --> DeletionService : **1.1.4:** totalChapters
+
+DeletionService -> BookRepo : **1.1.5:** softDelete(bookId)
+note right
+    Soft Delete Pattern:
+    UPDATE books
+    SET deleted_at = NOW()
+    WHERE id = ?
+
+    Não remove fisicamente
+    Mantém integridade referencial
+end note
+BookRepo -> DBMaster : **1.1.5.1:** UPDATE books SET deleted_at=NOW() WHERE id=?
+DBMaster --> BookRepo : **1.1.5.2:** affectedRows: 1
+BookRepo --> DeletionService : **1.1.6:** {affected: 1}
+
+DeletionService -> Cache : **1.1.7:** del("books:*", "book:" + bookId + ":*")
+note right
+    Invalida:
+    - Listagens de livros
+    - Detalhes do livro
+    - Capítulos do livro
+end note
+Cache --> DeletionService : **1.1.8:** OK
+
+DeletionService --> Controller : **1.2:** {message: "Livro excluído", bookId, chaptersAffected}
+Controller --> Client : **2:** 200 OK {message, data}
+
+note bottom of Client
+    **Fluxo UC-30: Soft Delete Livro**
+    1. Admin solicita exclusão de livro
+    2. Valida que livro existe e não foi deletado
+    3. Conta capítulos do livro (para auditoria)
+    4. Marca livro como deletado:
+       - deleted_at = NOW()
+       - Não remove fisicamente
+    5. Capítulos também ficam inacessíveis
+    6. Invalida todos os caches relacionados
+    7. Retorna confirmação
+
+    **Soft Delete Pattern:**
+    - Preserva dados para auditoria
+    - Permite recuperação futura
+    - Mantém integridade referencial
+    - Filtros sempre incluem: deleted_at IS NULL
+
+    **Efeitos em Cascade:**
+    - Livro não aparece em listagens
+    - Capítulos ficam inacessíveis
+    - Removido de coleções automaticamente
+    - Cache totalmente limpo
+end note
+
+@enduml

@@ -1,0 +1,236 @@
+@startuml Diagrama de Implantação - Desenvolvimento
+
+title Diagrama de Implantação - Ambiente de Desenvolvimento
+
+' ==================== MÁQUINA HOST ====================
+
+node "Development Machine (Host)" as DevHost {
+
+    ' Docker Engine
+    component [Docker Engine] as DockerEngine
+
+    ' Volumes persistentes
+    database "Docker Volumes" as Volumes {
+        artifact "database-data" as DBData
+        artifact "database-slave-1-data" as Slave1Data
+        artifact "database-slave-2-data" as Slave2Data
+        artifact "redis_data" as RedisData
+        artifact "selenium-data" as SeleniumData
+        artifact "api-data" as APIData
+    }
+
+    ' Mapeamento de código (bind mounts)
+    folder "Source Code" as SourceCode {
+        artifact "./back/src" as BackSrc
+        artifact "./front/src" as FrontSrc
+        artifact "./back/.env" as EnvFile
+    }
+}
+
+' ==================== REDE DOCKER ====================
+
+cloud "Docker Network\ngatuno_default" as DockerNet {
+
+    ' ==================== FRONTEND ====================
+
+    node "Container: gatuno-app" as AppContainer {
+        component [Angular App] as AngularApp
+        component [Angular Dev Server] as AngularDevServer
+        component [Port: 4200] as AppPort
+
+        note right of AngularApp
+            Image: gatuno-app (dev)
+            Dockerfile: Dockerfile.dev
+            Hot Reload: Enabled
+            Volume: ./front/src → /usr/src/app/src
+        end note
+    }
+
+    ' ==================== BACKEND API ====================
+
+    node "Container: gatuno-api" as APIContainer {
+        component [NestJS API] as NestJSAPI
+        component [NestJS Dev Server] as NestDevServer
+        component [Port: 3000] as APIPort3000
+
+        note right of NestJSAPI
+            Image: gatuno-api (dev)
+            Dockerfile: Dockerfile.dev
+            Hot Reload: Enabled
+            Volume: ./back/src → /usr/src/app/src
+            Volume: ./back/.env → /usr/src/app/.env
+            Volume: api-data → /usr/src/app/data
+        end note
+    }
+
+    ' ==================== BANCO DE DADOS ====================
+
+    node "Container: gatuno-database (Master)" as DBMasterContainer {
+        database "MySQL 8.0\nMaster" as MySQLMaster
+        component [Port: 3306] as DBPort
+        component [Server ID: 1] as ServerID1
+
+        note right of MySQLMaster
+            Volume: database-data → /var/lib/mysql
+            Volume: ./database/master/init.sh
+            Volume: ./database/master/my.cnf
+            External Port: ${DB_MASTER_EXTERNAL_PORT}
+            Replication: Master
+        end note
+    }
+
+    node "Container: gatuno-database-slave-1" as DBSlave1Container {
+        database "MySQL 8.0\nSlave 1" as MySQLSlave1
+        component [Port: 3306] as DBPort1
+        component [Server ID: 2] as ServerID2
+
+        note right of MySQLSlave1
+            Volume: database-slave-1-data
+            Volume: ./database/slave/my.cnf
+            External Port: ${DB_SLAVE_1_EXTERNAL_PORT}
+            Replication: Slave (Read-only)
+        end note
+    }
+
+    node "Container: gatuno-database-slave-2" as DBSlave2Container {
+        database "MySQL 8.0\nSlave 2" as MySQLSlave2
+        component [Port: 3306] as DBPort2
+        component [Server ID: 3] as ServerID3
+
+        note right of MySQLSlave2
+            Volume: database-slave-2-data
+            Volume: ./database/slave/my.cnf
+            External Port: ${DB_SLAVE_2_EXTERNAL_PORT}
+            Replication: Slave (Read-only)
+        end note
+    }
+
+    ' ==================== CACHE ====================
+
+    node "Container: gatuno-redis" as RedisContainer {
+        database "Redis 8.0" as Redis
+        component [Port: 6379] as RedisPort
+
+        note right of Redis
+            Image: redis:8.0-alpine
+            Volume: redis_data → /data
+            Purpose: Cache & Sessions
+        end note
+    }
+
+    ' ==================== SCRAPING ====================
+
+    node "Container: selenium-hub" as SeleniumHubContainer {
+        component [Selenium Hub] as SeleniumHub
+        component [Port: 4442] as HubPort1
+        component [Port: 4443] as HubPort2
+        component [Port: 4444] as HubPort3
+
+        note right of SeleniumHub
+            Image: selenium/hub:latest
+            Event Bus: 4442/4443
+            Web UI: 4444
+        end note
+    }
+
+    node "Container: node-docker" as NodeDockerContainer {
+        component [Node Docker] as NodeDocker
+        component [Chrome Containers] as ChromeContainers
+        component [Max Sessions: 4] as MaxSessions
+
+        note right of NodeDocker
+            Image: selenium/node-docker:latest
+            shm_size: 5gb
+            Volume: /var/run/docker.sock
+            Volume: selenium-data
+        end note
+    }
+
+    ' ==================== FERRAMENTAS DE ADMINISTRAÇÃO ====================
+
+    node "Container: gatuno-phpmyadmin" as PHPMyAdminContainer {
+        component [phpMyAdmin] as PHPMyAdmin
+        component [Port: 80] as PHPPort
+
+        note right of PHPMyAdmin
+            Image: phpmyadmin/phpmyadmin
+            Target: database-master
+            External Port: ${PHPMYADMIN_PORT}
+        end note
+    }
+
+    node "Container: gatuno-redis-commander" as RedisCommanderContainer {
+        component [Redis Commander] as RedisCommander
+        component [Port: 8081] as RCPort
+
+        note right of RedisCommander
+            Image: redis-commander:latest
+            Target: redis:6379
+            External Port: ${REDISCOMMANDER_PORT}
+        end note
+    }
+}
+
+' ==================== CONEXÕES ====================
+
+' Frontend <-> Backend
+AppContainer -[#blue]-> APIContainer : "HTTP REST API\n:3000"
+
+' Backend <-> Databases
+APIContainer -[#green]-> DBMasterContainer : "Write\n:3306"
+APIContainer -[#green]-> DBSlave1Container : "Read\n:3306"
+APIContainer -[#green]-> DBSlave2Container : "Read\n:3306"
+
+' Database Replication
+DBMasterContainer -[#red]-> DBSlave1Container : "Replication"
+DBMasterContainer -[#red]-> DBSlave2Container : "Replication"
+
+' Backend <-> Cache
+APIContainer -[#orange]-> RedisContainer : "Cache\n:6379"
+
+' Backend <-> Scraping
+APIContainer -[#purple]-> SeleniumHubContainer : "Scraping\n:4444"
+SeleniumHubContainer -[#purple]-> NodeDockerContainer : "Event Bus\n:4442/4443"
+
+' Admin Tools
+PHPMyAdminContainer -[#gray]-> DBMasterContainer : "Admin\n:3306"
+RedisCommanderContainer -[#gray]-> RedisContainer : "Admin\n:6379"
+
+' Volumes
+APIContainer ..[#brown]> APIData : "mount"
+APIContainer ..[#brown]> BackSrc : "mount (hot reload)"
+AppContainer ..[#brown]> FrontSrc : "mount (hot reload)"
+DBMasterContainer ..[#brown]> DBData : "mount"
+DBSlave1Container ..[#brown]> Slave1Data : "mount"
+DBSlave2Container ..[#brown]> Slave2Data : "mount"
+RedisContainer ..[#brown]> RedisData : "mount"
+NodeDockerContainer ..[#brown]> SeleniumData : "mount"
+
+' ==================== ACESSO EXTERNO ====================
+
+actor "Developer" as Dev
+Dev -[#blue]-> AppContainer : "http://localhost:${APP_PORT}"
+Dev -[#blue]-> APIContainer : "http://localhost:${API_PORT}"
+Dev -[#gray]-> PHPMyAdminContainer : "http://localhost:${PHPMYADMIN_PORT}"
+Dev -[#gray]-> RedisCommanderContainer : "http://localhost:${REDISCOMMANDER_PORT}"
+Dev -[#gray]-> SeleniumHubContainer : "http://localhost:${SELENIUM_HUB_PORT_3}"
+
+note bottom of DockerNet
+    **docker-compose.dev.yml**
+
+    Características do ambiente de desenvolvimento:
+    - Hot reload habilitado (frontend e backend)
+    - Source code mapeado via bind mounts
+    - Portas expostas para acesso direto
+    - Ferramentas de administração incluídas
+    - Restart policy: unless-stopped
+    - Network: bridge (gatuno_default)
+
+    Variáveis de ambiente (.env):
+    - API_PORT, APP_PORT
+    - DB_USER, DB_PASS, DB_NAME
+    - REDIS_PASSWORD
+    - Portas de serviços (PHPMYADMIN, SELENIUM, etc)
+end note
+
+@enduml
