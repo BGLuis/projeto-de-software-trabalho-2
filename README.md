@@ -201,47 +201,14 @@ O sistema possui 6 diagramas de sequência cobrindo 22 casos de uso distribuído
 
 Os contratos de operação especificam formalmente as pré-condições e pós-condições para as principais operações do sistema.
 
-#### CO-01: Registrar Novo Usuário
-
-**Operação:** `register(email, password, username, name)`
-**Referências:** UC-01
-**Pré-condições:** Email e username não cadastrados
-**Pós-condições:** Instância de User criada, senha criptografada, sessão JWT retornada
-
-#### CO-02: Autenticar Usuário
-
-**Operação:** `login(email, password)`
-**Referências:** UC-02
-**Pré-condições:** Usuário existe e não está excluído
-**Pós-condições:** Par de tokens JWT gerado, refresh token armazenado no Redis
-
-#### CO-03: Criar Livro
-
-**Operação:** `createBook(title, synopsis, status, authorIds, tagIds, sensitiveContentIds)`
-**Referências:** UC-24
-**Pré-condições:** Usuário com role ADMIN, IDs de autores/tags/conteúdo existem
-**Pós-condições:** Book criado, associações many-to-many estabelecidas, cache invalidado
-
-#### CO-04: Criar Coleção
-
-**Operação:** `createCollection(name, description, userId)`
-**Referências:** UC-15
-**Pré-condições:** Usuário autenticado, nome não duplicado
-**Pós-condições:** CollectionBook criada, relação com User estabelecida
-
-#### CO-05: Marcar Capítulo Como Lido
-
-**Operação:** `markChapterAsRead(userId, chapterId)`
-**Referências:** UC-14
-**Pré-condições:** Usuário autenticado, capítulo existe
-**Pós-condições:** ChapterRead criado/atualizado com timestamp atual
-
-#### CO-06: Executar Scraping
-
-**Operação:** `scrapeChapters(bookId, websiteId, startChapter, endChapter)`
-**Referências:** UC-33, UC-47
-**Pré-condições:** Admin autenticado, website configurado, Selenium Grid operacional
-**Pós-condições:** Chapters e Pages criados, imagens armazenadas, cache invalidado
+| Contrato | Operação | Referências | Pré-condições | Pós-condições |
+|----------|----------|-------------|---------------|---------------|
+| **CO-01** | `register(email, password, username, name)` | UC-01 | Email e username não cadastrados | Instância de User criada, senha criptografada, sessão JWT retornada |
+| **CO-02** | `login(email, password)` | UC-02 | Usuário existe e não está excluído | Par de tokens JWT gerado, refresh token armazenado no Redis |
+| **CO-03** | `createBook(title, synopsis, status, authorIds, tagIds, sensitiveContentIds)` | UC-24 | Usuário com role ADMIN, IDs de autores/tags/conteúdo existem | Book criado, associações many-to-many estabelecidas, cache invalidado |
+| **CO-04** | `createCollection(name, description, userId)` | UC-15 | Usuário autenticado, nome não duplicado | CollectionBook criada, relação com User estabelecida |
+| **CO-05** | `markChapterAsRead(userId, chapterId)` | UC-14 | Usuário autenticado, capítulo existe | ChapterRead criado/atualizado com timestamp atual |
+| **CO-06** | `scrapeChapters(bookId, websiteId, startChapter, endChapter)` | UC-33, UC-47 | Admin autenticado, website configurado, Selenium Grid operacional | Chapters e Pages criados, imagens armazenadas, cache invalidado |
 
 # 3. Modelos de Projeto
 
